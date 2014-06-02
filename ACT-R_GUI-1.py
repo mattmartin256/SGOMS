@@ -137,7 +137,10 @@ class PUxUTRelation:
         self.tuppleID = "PUxUTRelation", self.planningUnit.ID, self.unitTask.ID, self.location
 
         print "(PUxUTRelation.init) Created: ", self.tuppleID  
-            
+
+
+##### The Model #####
+        
 class SGOMS_Model:
     '''The underlying model that the GUI runs on'''
 
@@ -262,7 +265,52 @@ class SGOMS_Model:
             print "There are no PUxUTRelationships in the Model"
 
         print "==== End of (printModelContentsAdvanced) ===="    
-                
+
+    ########## Write to ACT-R ##########
+
+    def outputToACTR(self):
+        '''Takes what is in the model and outputs it into python ACT-R readable code'''
+
+        directory = os.getcwd()
+        print directory
+
+        with open("TestWriting.py", "w") as f:  ## Open a new file for writing
+
+            ## Write the basic import statements
+            f.write("import ccm\n")
+            f.write("log=ccm.log()\n")
+            f.write("from ccm.lib.actr import *\n\n")
+
+            ## Write the environment statements
+            f.write("class MyEnvironment(ccm.Model):\n")
+            f.write("   pass\n\n")
+
+            ## Write the Agent
+            f.write("class MyAgent(ACTR):\n")
+            f.write("    focus=Buffer()\n")
+            f.write("    DMbuffer=Buffer()\n")
+            f.write("    DM=Memory(DMbuffer)\n\n")
+
+            ## Write the init method
+            f.write("    def init():\n")
+            f.write("        pass\n\n")
+                      
+            ## Write the Planning Units/productions
+            for planningUnit in self.planningUnitList:
+                f.write("    def " + planningUnit.ID + "():\n")
+                f.write("        pass\n\n")
+
+            ## Write the code to run the model
+
+            f.write("tim = MyAgent()\n")
+            f.write("env = MyEnvironment()\n")
+            f.write("env.agent = tim\n")
+            f.write("ccm.log_everything(env)\n\n")
+
+            f.write("env.run()\n")
+            f.write("ccm.finished()\n")                
+
+##### The GUI #####
 
 class SGOMS_GUI(tk.Frame):
     '''An interface for creating Planning Units and Unit Tasks,
@@ -322,22 +370,7 @@ class SGOMS_GUI(tk.Frame):
         self.createTree()
 
     def createTree(self):
-        '''Creates the Treeview widget'''
-
-
-        ## Original version
-        '''
-        self.tree = ttk.Treeview(self, height=6, selectmode="browse")
-        
-        dataColumns = ["Planning Units", "Unit Tasks"]
-        
-        self.tree.heading('#0', text='Model', anchor='w')
-        self.tree.columns = dataColumns
-        self.tree.displaycolumns = '#all'
-
-        self.tree.grid(row=0, column=2)
-        '''
-        
+        '''Creates the Treeview widget'''       
 
         ## Testing out columns for the tree
         self.tree = ttk.Treeview(self, columns=("Info"), height=6, selectmode="browse") ## 'Columns' specifies the ID of the extra(?) column I want to have
@@ -350,28 +383,9 @@ class SGOMS_GUI(tk.Frame):
 
         self.tree.grid(row=0, column=2)
 
-        '''
-        self.tree.insert('', 0, 'PU', text="Planning Unit X") #Insert <ID>'PU' as the first child of the root node, displaying the text "Planning Unit X"
-        self.tree.insert('PU', 0, 'UT', text="Unit Task X") #Insert <ID>'UT' as the child of PU, at index 0
-        self.tree.item('PU', open=True)
-        '''
         planningUnitCounter = 0
         unitTaskCounter = 0
 
-        '''
-        ## Use the Planning Unit list and Unit Task list to populate the tree
-        ## Add each initial Planning Unit and Unit Task (for testing purposes)
-        for item in self.model.planningUnitList:
-            self.tree.insert('', 'end', item.ID, text=item.ID) #Insert <ID>item.ID as the first child of the root node, displaying it's own ID as text
-            ## Inserting something returns the ID of the newly created item, which can be used below
-            self.tree.item(item.ID, open=True)
-
-            for thing in item.unitTaskList:
-                self.tree.insert(item.ID, 'end', thing.ID, text=thing.ID) #Insert <ID>thing.ID as the first child of <parent>pUID
-                unitTaskCounter += 1
-
-            planningUnitCounter += 1
-        '''
 
         ##Use the Planning Unit list to populate the tree with Planning Units
         for item in self.model.planningUnitList:
@@ -405,7 +419,7 @@ class SGOMS_GUI(tk.Frame):
 
         print "(SGOMS_GUI.addPlanningUnitToTree)"
         
-        self.tree.insert("", "end", thePlanningUnit.ID, text=thePlanningUnit.ID)
+        self.tree.insert("", "end", thePlanningUnit.ID, text=thePlanningUnit.ID) ## Insert the PU to the root of the tree
         self.tree.item(thePlanningUnit.ID, open=True)
 
     def addUnitTaskToTree(self, thePUxUTRelationship):
@@ -417,13 +431,10 @@ class SGOMS_GUI(tk.Frame):
 
         ## Insert unit task into the tree
         ## Each leaf must be unique, but point to the same underlying UT
-        ## Somehow I must be able to access the tree ID of the parent PU
-        ## If I had a global update function, I might be able to get around this problem
-        ## Since I would be adding the planning units, I could have access to their IDs
-        #for item in theUnitTask.parentPlanningUnits:
-        #    self.tree.insert(item.ID, "end", theUnitTask.ID, text=theUnitTask.ID)
+        ## This is done through the list of PUxUTRelationships, each r is unique and points to a UT and PU
+        ## PUs must all have unique names at this point (may change this later though; 2014.05.28)
 
-        tempID = thePUxUTRelationship.ID
+        tempID = thePUxUTRelationship.ID        ## By default the ID is just the index of r in the list of relationships
         pU = thePUxUTRelationship.planningUnit
         uT = thePUxUTRelationship.unitTask
         loc = thePUxUTRelationship.location
@@ -448,7 +459,7 @@ class SGOMS_GUI(tk.Frame):
 
         '''2014.05.15- Functionality of tree is different than buttons,
         You can't just clobber everything at update, and can't override what's already in the tree.
-        (You get exceptions if you do).
+        (You get exceptions if you do, because things in the tree already exist and can't be clobbered).
         Need to either nuke the tree on each update and start from scratch,
         or move functionality to the TopLevel windows
 
@@ -457,30 +468,14 @@ class SGOMS_GUI(tk.Frame):
 
         The nuking option seems like not the best option, I will move functionality elsewhere
         ^Actually, I could just create a new tree on update, and populate it every time
+        ^This is memory-intensive and wasteful, there must be a better way
 
         Option 1: when update is called, delete everything in the tree manually, and repopulate
-        Option 2: don't use update, and have the TopLevel window add to the tree directly
+        Option 2: don't use update, and have the TopLevel window add to the tree directly without update (this is what I do; 2014.05.28)
         Option 3: when update is called check if the item is already in the tree, and if so, pass  #This seems like the best option
         Option 4: when update is called, create a new tree, and populate it from scratch
 
-        #David seems to do something like Option 2 with his linkWorld/unlinkWorld commands.
-        '''
-
-        '''
-        print "(updateTree)"
-
-        planningUnitCounter = 0
-        unitTaskCounter = 0
-
-        for item in self.model.planningUnitList:
-            self.tree.insert('', 'end', item.ID, text=item.ID) #Insert <ID>item.ID as the first child of the root node, displaying it's own ID as text
-            self.tree.item(item.ID, open=True)
-
-            for thing in item.unitTaskList:
-                self.tree.insert(item.ID, 'end', thing.ID, text=thing.ID) #Insert <ID>thing.ID as the first child of <parent>item.ID
-                unitTaskCounter += 1
-
-            planningUnitCounter += 1
+        #David seems to do something like Option 2 with his linkWorld/unlinkWorld commands, I follow his lead.
         '''
 
         ##Use the Planning Unit list to populate the tree with Planning Units
@@ -677,7 +672,7 @@ class UnitTaskWindow(tk.Toplevel):
 
                 self.master.addUnitTaskToTree(newRelationship) ## Update the GUI's tree, feed it a relationship
 
-                #print "State of the Model after explicitly adding the new Unit Task to ", item.ID, ":"
+                #FDO print "State of the Model after explicitly adding the new Unit Task to ", item.ID, ":"
                 #FDO self.master.model.printModelContentsAdvanced() ##The problem is occuring before this point
                 #newUnitTask.parentPlanningUnits.append(item)
                 #newUnitTask.printParentPlanningUnits()
