@@ -4,9 +4,6 @@ Created on Jun 13, 2014
 @author: Matthew Martin
 
 This is an Extension of SimpleGraph1, where I include multiple JPanels into my Frame
-
-I refactored the code on June 25, making the PUs and UTs 'dumber',
-moving all the 'smart' functionality to SGOMS_Model to reduce moving parts. 
 '''
 
 from java.awt import *
@@ -37,18 +34,19 @@ class PlanningUnit:
         print "(PlanningUnit.__init__) Planning Unit Created: ", self.ID
         self.printPlanningUnitContents()
         
-    def __str__(self):
+    def _str_(self):
         '''Returns a string representation of the Planning Unit'''
         
         return "PU: " + self.ID + " # of Unit Tasks: " + len(self.unitTaskList)
 
     def addUnitTask(self, theUnitTask):
         '''Adds theUnitTask to the Planning Unit,
-        does not set the current Planning Unit to be the parent Planning Unit of the Unit Task
+        and sets the current Planning Unit to be the parent Planning Unit of the Unit Task
 
         theUnitTask should be a UnitTask'''
 
         self.unitTaskList.append(theUnitTask)
+        theUnitTask.setParentPlanningUnit(self)
 
         print "(PlanningUnit.addUnitTask); Unit Task ", theUnitTask.ID, " was added to Planning Unit ", self.ID  
         
@@ -82,10 +80,10 @@ class UnitTask:
         print "(UnitTask.__init__) Unit Task Created: ", self.ID,
         self.printParentPlanningUnits()
         
-    def __str__(self):
+    def _str_(self):
         '''Returns a string representation of the Unit Task'''
         
-        return "UT: " + str(self.ID) + ", # of Parent PUs: " + str(len(self.parentPlanningUnits))
+        return "UT: " + self.ID + ", # of Parent PUs: " + len(self.parentPlanningUnits)
 
     def setParentPlanningUnit(self, thePlanningUnit):
         '''Adds thePlanningUnit to the list of parent Planning Units
@@ -112,35 +110,21 @@ class UnitTask:
 class PUxUTRelation:
     '''Represents the relationship between a PlanningUnit and a UnitTask'''
 
-    def __init__(self, theID=0, thePlanningUnit=None, theUnitTask=None, theLocation=0):
+    def __init__(self, theID="PUxUTRelation", thePlanningUnit=None, theUnitTask=None):
         '''Initializes the relationship between thePlanningUnit and theUnitTask
 
-        theID should be a unique integer (or possibly string), each relation's ID must be unique
+        theID should be a unique string (or possibly integer), each relation's ID must be unique
         thePlanningUnit should be a single PlanningUnit that contains theUnitTask in its unitTasklist
-        (Or can be None by default, representing an unconnected Unit Task)
-        theUnitTask should be a single UnitTask with thePlanningUnit as a parent Planning Unit
-        theLocation represents the location/order of the Unit Task within the Planning Unit'''
+        theUnitTask should be a single UnitTask with thePlanningUnit as a parent Planning Unit'''
 
         self.ID = theID 
         self.planningUnit = thePlanningUnit
         self.unitTask = theUnitTask
-        self.location = theLocation ## The location of the unit task within the planning unit/tree
-        if self.planningUnit == None:
-            self.tuppleID = "PUxUTRelation", self.ID, None, self.unitTask.ID, self.location
-        else:
-            self.tuppleID = "PUxUTRelation", self.ID, self.planningUnit.ID, self.unitTask.ID, self.location
+        self.location = thePlanningUnit.unitTaskList.index(theUnitTask) ## The location of the unit task within the planning unit/tree
+        ##^I'm not sure, but this line may be problematic if there are more than one of the same unit task in the list
+        self.tuppleID = "PUxUTRelation", self.planningUnit.ID, self.unitTask.ID, self.location
 
-        print "(PUxUTRelation.init) Created: ", self.tuppleID
-        
-    def updateTuppleID(self):
-        '''Updates the tuppleID, based on any changes made to the PUxUTRelation'''
-        
-        if self.planningUnit == None:
-            self.tuppleID = "PUxUTRelation", self.ID, None, self.unitTask.ID, self.location
-        else:
-            self.tuppleID = "PUxUTRelation", self.ID, self.planningUnit.ID, self.unitTask.ID, self.location
-            
-        print "(PUxUTRelation.updateTuppleID) new ID:", self.tuppleID
+        print "(PUxUTRelation.init) Created: ", self.tuppleID  
 
 
 ##### The Model #####
@@ -159,17 +143,15 @@ class SGOMS_Model:
         self.planningUnitList = thePlanningUnitList
         if thePlanningUnitList == None:
             self.planningUnitList = []
+        self.planningUnitCounter = len(self.planningUnitList)
 
         self.unitTaskList = theUnitTaskList
         if theUnitTaskList == None:
             self.unitTaskList = []
+        self.unitTaskCounter = len(self.unitTaskList)
 
         if thePUxUTRelationList == None:   
             self.pUxUTRelationList = []
-        
-        ## A counter to keep track of the number of relations in the model
-        ## Is used as a unique ID of each relation
-        self.relationCounter = 0
             
 
     def addPlanningUnit(self, thePlanningUnit):
@@ -179,63 +161,45 @@ class SGOMS_Model:
         thePlanningUnit should be a PlanningUnit'''
 
         self.planningUnitList.append(thePlanningUnit)
+        self.planningUnitCounter = len(self.planningUnitList)
 
         print "(Model.addPlanningUnit): ", thePlanningUnit.ID, " added. Total number of Planning Units in the model = ", len(self.planningUnitList)
 
     def addUnitTask(self, theUnitTask, theParentPlanningUnit=None):
         '''Adds theUnitTask to self.unitTaskList,
-        Adds the Unit Task to theParentPlanningUnit (if supplied)
+        and updates the unitTaskCounter to be the length of the Unit Task list.
         Also sets theParentPlanningUnit to be the parent Planning Unit of theUnitTask, if supplied
-        (Function prevents adding of duplicate Parent Planning Units to the unit task's list)
         There is no requirement for the Unit task to belong to a PlanningUnit
 
         theUnitTask should be a UnitTask
         thePlanningUnit should be a PlanningUnit'''
 
-        self.unitTaskList.append(theUnitTask)
-        
-        ## If there is a Parent Planning Unit supplied
-        if theParentPlanningUnit != None:
-            ## Append the unit task to the Parent Planning Unit (do not prevent duplicates)
-            theParentPlanningUnit.unitTasks.append(theUnitTask)
-            
-            ## Prevent duplicate entries of Parent PUs while adding the Parent to the list
-            if theParentPlanningUnit not in theUnitTask.parentPlanningUnits:
-                theUnitTask.parentPlanningUnits.append()
+        if theParentPlanningUnit == None:
+            self.unitTaskList.append(theUnitTask)
+            self.unitTaskCounter = len(self.unitTaskList)
+
+        else:
+            self.unitTaskList.append(theUnitTask)
+            self.unitTaskCounter = len(self.unitTaskList)
+            theParentPlanningUnit.addUnitTask(theUnitTask)
 
         print "(Model.addUnitTask): ", theUnitTask.ID, " added. Total number of Unit Tasks in the model = ", len(self.unitTaskList)
-        
-    def addUnitTaskToPlanningUnit(self, theUnitTask, thePlanningUnit):
-        '''Adds theUnitTask to thePlanningUnit's list of unit tasks, not preventing duplicates
-        Adds thePlanningUnit to theUnitTask's list of Parent Planning Units, while preventing duplicates
-        
-        theUnitTask should be a UnitTask
-        thePlanningUnit should be a PlanningUnit'''
-        
-        thePlanningUnit.unitTasks.append(theUnitTask)
-        
-        if thePlanningUnit not in theUnitTask.parentPlanningUnits:
-            theUnitTask.parentPlanningUnits.append()
-            
-        print "(SGOMS_Model.addUnitTaskToPlanningUnit) ", theUnitTask.ID, " added to", thePlanningUnit.ID
 
-    def addPUxUTRelationReturnSelf(self, theUnitTask, thePlanningUnit=None,  theLocation=0):
-        '''Creates a relationship between thePlanningUnit and theUnitTask at the location given,
+    def addPUxUTRelationReturnSelf(self, thePlanningUnit, theUnitTask):
+        '''Creates a relationship between thePlanningUnit and theUnitTask,
         and adds it to the list of relationships. 
 
-        theUnitTask should be a UnitTask
-        thePlanningUnit should be a PlanningUnit (but can be None by default)
-        theLocation should be an Integer, representing the order of the UT within the PU'''
+        thePlanningUnit should be a PlanningUnit
+        theUnitTask should be a UnitTask'''
 
-        ## self.relationCounter assigns a unique ID to each relation (the first parameter of a Relation)
-        r = PUxUTRelation(self.relationCounter, thePlanningUnit, theUnitTask, theLocation)
+        tempID = len(self.pUxUTRelationList) ## The ID for the relation will just be its index in the model's list
+
+        r = PUxUTRelation(tempID, thePlanningUnit, theUnitTask)
 
         self.pUxUTRelationList.append(r)
-        self.relationCounter += 1   
+        return r
 
         print "(Model.addPUxUTRelation) Adding to list : ", r.tuppleID
-        
-        return r
 
     def printModelContentsBasic(self):
         '''Print the IDs of all Planning Units and Unit Tasks in the Model'''
@@ -243,7 +207,7 @@ class SGOMS_Model:
         ## Planning Units
         print "(printModelContentsBasic), Planning Units:"
         if len(self.planningUnitList) > 0:
-            print "There are ", len(self.planningUnitList), " Planning Units in the Model:"
+            print "There are ", self.planningUnitCounter, " Planning Units in the Model:"
             for item in self.planningUnitList:
                 print item.ID
         else:
@@ -252,7 +216,7 @@ class SGOMS_Model:
         ## Unit Tasks
         print "(printModelContents), Unit Tasks:"
         if len(self.unitTaskList) > 0:
-            print "There are ", len(self.unitTaskList), " Unit Tasks in the Model:"
+            print "There are ", self.unitTaskCounter, " Unit Tasks in the Model:"
             for item in self.unitTaskList:
                 print item.ID
         else:
@@ -268,7 +232,7 @@ class SGOMS_Model:
         print "==== (printModelContentsAdvanced) ===="
         print "Planning Units:"
         if len(self.planningUnitList) > 0:
-            print "There are ", len(self.planningUnitList), " Planning Units in the Model:"
+            print "There are ", self.planningUnitCounter, " Planning Units in the Model:"
             for item in self.planningUnitList:
                 item.printPlanningUnitContents()
         else:
@@ -278,7 +242,7 @@ class SGOMS_Model:
         if len(self.unitTaskList) > 0:
             print "There are ", len(self.unitTaskList), " Unit Tasks in the Model:"
             for item in self.unitTaskList:
-                print item
+                item.printParentPlanningUnits()
         else:
             print "There are no Unit Tasks in the model"
 
@@ -366,13 +330,14 @@ class Node:
         else:
             self.incidentEdges = theIncidentEdges
             
+        #self.RADIUS = 15    ##The default radius of the Node
         self.rootNode = False  ## By default, a node is not the root
         self.selected = False  ## Indicates whether the node is selected or not
-        self.recursed = False  ## A flag for using recursive functions such as getRootNode()
+        self.recursed = False  ## A flag for using the function getRootNode
         
         ## Specifies the default order within the planning unit (distance from the root)
-        orderVar = self.getHopsToRootNode()  ## Returns none if no root node
-        if orderVar == None:    ## If can't find a root node, it's order is by default zero
+        orderVar = self.getHopsToRootNode() 
+        if orderVar == None:    ## If can't find a root node, treat itself as a root node
             self.order = 0
         else:
             self.order = orderVar   
@@ -386,14 +351,10 @@ class Node:
     def toggleSelected(self):
         '''Changes the selected boolean to True/False depending on previous state'''
         
-        self.selected = not self.selected
-        
-        '''
         if self.selected == False: 
             self.selected = True
         else:
             self.selected = False
-        '''
             
         print "(Node.toggleSelected) selected = ", self.selected
             
@@ -412,7 +373,7 @@ class Node:
     
     def returnUnvisitedNeighbourNodes(self):
         '''Returns each neighbour node where recursed == False
-        Used in recursive functions such as getHopsToRootNode()'''
+        Used in getRootNodeHelper'''
         
         returnList = []
         
@@ -505,15 +466,7 @@ class Node:
     
     def getHopsToRootNode(self):
         '''Returns the number of hops away from the root node the current node is (as an int)
-        Calls getHopsToRootNodeHelper
-        
-        Returns 0 if self is the root
-        Returns None if self is not the root, and self is not connected to anything
-        Returns None if self is connected to other nodes, but none are the root (returns value from helper)
-        Returns an int if self is connected to a root, int is how many hops away self is
-        
-        E.g. nodes a(root) --> b --> c
-        c.getHopsToRootNode() --> returns 2'''
+        Calls getHopsToRootNodeHelper'''
                
         #everyConnectedNode = [] ## The list to keep track of each connected node
         
@@ -533,7 +486,6 @@ class Node:
         
         self.recursed = True  ## Prevent the function from finding itself
         
-        ## This is the recursive call to the helper method, stores the return value in returnVar
         returnVar = self.getHopsToRootNodeHelper(nodeList, everyConnectedNode)
         
         print "(Node.getHopsToRootNode) hops to root node from", self.label, "=", returnVar
@@ -544,23 +496,10 @@ class Node:
         
     def getHopsToRootNodeHelper(self, theNodeList, everyConnectedNode, times=0):
         '''Helper method for getHopsToRootNode
-        Returns the number of hops away from the root node the current node is
-        Returns None if it exhausts the nodes connected to self, and finds no root
-        
-        theNodeList is basically a list of connected nodes to recurse over in order to find more nodes
-        it is populated by the function returnUnvisitedNeighbourNodes()
-        nodes that have been found by this function have their recursed flag set to true, to avoid recursing infinitely
-        
-        everyConnectedNode keeps track of every node found by the search,
-        so that every node's 'recursed' flag can be reset at the end of the function
-        
-        times keeps track of the recursive level, and by proxy the distance from the initial node the function is'''
+        Returns the number of hops away from the root node the current node is'''
 
-        ## Set every node in theNodeList's recursed flag to True, 
-        ## in order to prevent nodes from finding previous nodes, and recursing infinitely
         for item in theNodeList:
             item.recursed = True
-            ## Keep track of every node found by the function so that their flags can be reset at the end
             if item not in everyConnectedNode:
                 everyConnectedNode.append(item)
                     
@@ -568,25 +507,20 @@ class Node:
         print "---------- Level", times+1, "----------"
        
         ## This is the check for end state, if it has gone 20 times, the function ends and returns None
-        ## This function is for testing purposes only, it should not be tripped under normal circumstances
-        ## This is basically like throwing an exception, it stops an infinite loop if something goes wrong
+        ## This is basically throwing an exception
         if times > 19:
-            ## Reset each recursed flag back to False before returning
-            for thing in everyConnectedNode:
-                    thing.recursed = False
             print ("(Node.getRootNodeHelper) Recursed 20 times, returning None")
             return None
         
         ## Another check for the end state, if it has found the root node, return the # of hops
-        ## (each item in theNodeList is one hop away from the previous node, so hops = times +1)
+        ## (each item in theNodeList is one hop away from the previous node, so hops = times +1
         for item in theNodeList:
-            if item.rootNode == True:   ## If it has found a root
+            if item.rootNode == True:
                 ## Reset each recursed flag back to False before returning
                 for thing in everyConnectedNode:
                     thing.recursed = False
-                return times+1      ## Return # of hops
-        
-        ## Now we get into the 'guts' of the function
+                return times+1
+                
         passList = []  ## A variable for storing the list to be passed on to the next function call
         
         for item in theNodeList:
@@ -597,7 +531,12 @@ class Node:
             tempList += item.returnUnvisitedNeighbourNodes()
             
             print "Length of tempList on times", times, len(tempList)
-                       
+            
+            ## Check the end condition, if didn't find anything, return empty list
+            #if len(tempList) < 1:
+            #    print "Length of templist was 0, returning empty list"
+            #    return tempList
+            
             for thing in tempList:
                 print item.label, " is connected to ", thing.label
                 thing.recursed = True   ## Keep track of which nodes have been found already
@@ -606,26 +545,23 @@ class Node:
         ## This is the check for the end state, if there are no unvisited nodes left,
         ## and it has not found a root node, return None (throw an exception)
         if len(passList) < 1:
+            #returnList = []
             print "(Node.getHopsToRootNodeHelper) passList is empty, returning None"
-            ## Reset the recursed flags
             for item in everyConnectedNode:
                 #print item.label
                 item.recursed = False
                 #if item not in returnList:
                 #    returnList.append(item)
                 #    print "appending happened ok"
-            #FDO print "helper returnlist", str(returnList)
+            #print "helper returnlist", str(returnList)
             return None
         
-        #FDO print "hi"        
+        #print "hi"        
         return self.getHopsToRootNodeHelper(passList, everyConnectedNode, times+1)     
         
     def getEveryConnectedNode(self):
         '''Returns a list of all nodes that the current node is (indirectly) connected to
-        Returns an empty list if there are no connected nodes
-        
-        Eg. Nodes a --> b --> c
-        c.getEveryConnectedNode() --> returns [a, b]'''
+        Returns an empty list if there are no connected nodes'''
        
         self.recursed = True  ## Prevent the function from finding itself
         
@@ -636,7 +572,6 @@ class Node:
         ## Return empty list if there are no neighbour nodes 
         if len(nodeList) < 1:
             print self.label, " is not connected to anything"
-            self.recursed = False   ## Reset the recursed variable before returning
             return nodeList
        
         
@@ -653,27 +588,15 @@ class Node:
         
         #returnList = self.getEveryConnectedNodeHelper(nodeList, everyConnectedNode)
         print "(Node.getEveryConnectedNode) returnlist = ", str(returnList)
-        self.recursed = False   ## Reset the recursed variable before returning
+        self.recursed = False
         
         return returnList
 
     def getEveryConnectedNodeHelper(self, theNodeList, everyConnectedNode, times=0):
-        '''A helper method for the recursive getEveryConnectedNode() method
-        
-        functions essentially the same as getHopsToRootNodeHelper(), except it returns
-        everyConnectedNode, rather than the # of hops
-        
-        theNodeList is basically a list of connected nodes to recurse over in order to find more nodes
-        it is populated by the function returnUnvisitedNeighbourNodes()
-        nodes that have been found by this function have their recursed flag set to true, to avoid recursing infinitely
-        
-        everyConnectedNode keeps track of every node found by the search,
-        so that they can be returned at the end of the function, and so that their recursed flags can be reset 
-        
-        times keeps track of the recursive level, and by proxy the distance from the initial node the function is'''
+        '''A helper method for the recursive getEveryConnectedNode() method'''
         
         for item in theNodeList:
-            item.recursed = True    ## Prevent the function from finding itself
+            item.recursed = True
             if item not in everyConnectedNode:
                 everyConnectedNode.append(item)
                 
@@ -682,7 +605,7 @@ class Node:
        
         ## This is the check for end state, if it has gone 20 times, the function ends and returns None
         if times > 19:
-            print "(Node.getRootNodeHelper) Recursed 20 times, returning False"
+            print ("(Node.getRootNodeHelper) Recursed 20 times, returning False")
             return None
                 
         passList = []  ## A variable for storing the list to be passed on to the next function call
@@ -690,13 +613,17 @@ class Node:
         for item in theNodeList:
             ## For every item in theNodeList keep a list of related nodes
             ## tempList is a list of Nodes related to the item in question, each item will have a tempList
-            tempList = []   ## This is not going to contain anything that has already been found, 
+            tempList = []   ## This is not going to contain anything that has already been activated, 
                             ## as they are excluded in the returnUnvisitedNeighbourNodes method
             tempList += item.returnUnvisitedNeighbourNodes()
             
             print "Length of tempList on times", times, len(tempList)
             
-                       
+            ## Check the end condition, if didn't find anything, return empty list
+            #if len(tempList) < 1:
+            #    print "Length of templist was 0, returning empty list"
+            #    return tempList
+            
             for thing in tempList:
                 print item.label, " is connected to ", thing.label
                 thing.recursed = True   ## Keep track of which nodes have been found already
@@ -705,14 +632,19 @@ class Node:
         ## This is the check for the end state, if there are no unvisited nodes left,
         ## return the list of every connected node
         if len(passList) < 1:
+            returnList = []
             print "passList is empty, returning everyConnectedNode:"
             for item in everyConnectedNode:
                 print item.label
-                item.recursed = False   ## Reset the recursed flag back to false for every node found
-            
-            return everyConnectedNode
-            
-        ##FDO print "hi"        
+                item.recursed = False
+                if item not in returnList:
+                    returnList.append(item)
+                    #print "appending happened ok"
+            print "helper returnlist", str(returnList)
+            return returnList
+        
+        print "hi"        
+        #return (theNodeList + self.getEveryConnectedNodeHelper(passList, everyConnectedNode, times+1))
         return self.getEveryConnectedNodeHelper(passList, everyConnectedNode, times+1)
     
     def draw(self, aPen):
@@ -747,21 +679,18 @@ class Node:
 class PUNode(Node):
     '''Specifies the behaviour/appearance of a PlanningUnitNode (PUNode)
     
-    PUNode inherits from Node
-    Each PUNode will point to a unique underlying PlanningUnit'''
+    PUNode inherits from Node'''
     
     HEIGHT = 40
     WIDTH = 50
     
-    def __init__(self, aLabel = "PUNode", aLocation = None, theIncidentEdges = None, thePU = None):
+    def __init__(self, aLabel = None, aLocation = None, theIncidentEdges = None, thePU = None):
         '''Initializes the Node with an empty point and label, if none provided
         
-        aLabel should be a string, by default it is the Label of thePU (if one is provided)
+        aLabel should be a string, by default it is the Label of thePU 
         aLocation should be a Point
         theIncidentEdges should be a list of Edges
-        thePU should be a PlanningUnit
-        
-        A blank PU is not created by default, it should be passed in only'''
+        thePU should be a PlanningUnit'''
         
         if aLocation == None:
             self.location = Point(0,0)
@@ -772,73 +701,27 @@ class PUNode(Node):
             self.incidentEdges = []
         else:
             self.incidentEdges = theIncidentEdges
-        
-        ## 2014.06.26 - We are not going to create a blank PU on initialization,
-        ## by default the PU will remain None
-        ## when created by Graph.addPUNode, Graph will supply the PU and add to SGOMS_Model
-        #if thePU == None:
-            ## This needs to be added to the SGOMS_Model somehow!!!
-        #    self.planningUnit = PlanningUnit()
-        #else:
-        #    self.planningUnit = thePU
-        
-        self.planningUnit = thePU
-        
-        if aLabel == "PUNode" and self.planningUnit != None:
-            self.label = self.planningUnit.ID
+            
+        if thePU == None:
+            self.planningUnit = PlanningUnit()
         else:
-            self.label = aLabel 
-
-        self.selected = False   ## Indicates whether the node is selected or not
-        self.rootNode = True    ## Specifies whether the node is the root node (PUs are by default the root)
-        self.recursed = False
-        self.order = 0
+            self.planningUnit = thePU
         
+        self.label = aLabel 
+        if aLabel == None:
+            self.label = self.planningUnit.ID
+
+        self.selected = False  ## Indicates whether the node is selected or not
+        self.rootNode = True  ## Specifies whether the node is the root node (PUs are by default the root)
+        self.recursed = False
         
         print "(PUNode) initiated, ", self 
         
-    def __str__(self):
-        '''Returns a string representation of the PUNode
+    def _str_(self):
+        '''Returns a string representation of the PUNode'''
         
-        looks like: PUNode: label PU: PU.ID (x,y)'''
-        
-        return "PUNode: " + self.label \
+        return "PUNode: " + self.label + " PU: " + self.planningUnit.ID \
                 + " (" + str(self.location.x) + "," + str(self.location.y) + ")"
-                
-    def update(self):
-        '''Updates the PUNode, based on any changes to the graph
-        Calls updateOrder() and updatePU()'''
-        
-        print "(", self.label, ".update)"
-        
-        self.updateOrder()
-        self.updatePU()
-         
-    def updatePU(self):
-        '''Updates the PUNode, based on which nodes are connected to it
-        Adds the UT of each connected UTNode to the PU's list of UTs
-        
-        This basically resets the PU contents each time it is called
-        based on the nodes the PUNode is connected to
-        The function is primarily concerned with connecting UTNodes to PUNodes'''
-        
-        print "(PUNode: ",self.label,".updatePU)"
-        
-        ## I believe this is the syntax for clearing a list in python
-        del self.planningUnit.unitTaskList[:]
-        
-        connectedNodes = self.getEveryConnectedNode()
-        
-        ## We are not adding anything to SGOMS model here, we are only modifying what already exists
-        ## e.g. no UnitTasks or PlanningUnits are being deleted or added to the SGOMS lists
-        ## We are also only worried about the PU contents, the relations can worry about themselves elsewhere
-        ## The list of unit tasks in the PlanningUnit is 'semi-ordered', i.e. each instance of a UT is
-        ## represented in the UnitTaskList, but the order is not important (order is represented by relations
-        for node in connectedNodes:
-            ## Check to make sure the connected node in question is a UTNode
-            if isinstance(node, UTNode):
-                ## Add the UTNode's UT to the PUNode's PU
-                self.planningUnit.addUnitTask(node.pUxUTRelation.unitTask)
         
     def draw(self, aPen):
         '''Draws the PUNode
@@ -860,30 +743,31 @@ class PUNode(Node):
         
         # Draw a label at the top right corner of the node
         aPen.setColor(Color.black)
-        aPen.drawString(self.label, self.location.x + int(PUNode.WIDTH/2), self.location.y - int(PUNode.HEIGHT/2))
+        aPen.drawString(self.label, self.location.x + PUNode.WIDTH, self.location.y - PUNode.HEIGHT)
         
 class UTNode(Node):
-    '''Specifies the behaviour/appearance of a UTNode
+    '''Specifies the behaviour/appearance of a UnitTaskNode (PUNode)
     
-    UTNode inherits from Node
-    Each UTNode points directly to a unique underlying PUxUTRelation'''
+    UTNode inherits from Node'''
     
     RADIUS = 20
     
-    def __init__(self, aLabel = "UTNode", aLocation = None, theIncidentEdges = None, thePUxUTRelation = None):
+    def __init__(self, aLabel = None, aLocation = None, theIncidentEdges = None, 
+                 theUT = None, thePUxUTRelation = None):
         '''Initializes the Node with an empty point and label, if none provided
         
         aLabel should be a string, by default it is the Label of theUT  
         aLocation should be a Point
         theIncidentEdges should be a list of Edges
-        thePUxUTRelation should be a PUxUTRelation
-        
-        A blank PUxUTRelation is not created by default, it should be passed in only'''
+        theUT should be a PlanningUnit
+        thePUxUTRelation should be a PUxUTRelation'''
         
         self.selected = False  ## Indicates whether the node is selected or not
-        self.rootNode = False  ## Indicates whether the node is the root node (false by default for UTNodes)
-        self.recursed = False  ## A flag for recursive functions to use    
+        self.rootNode = False  ## Indicates whether the node is the root node (false by default for UTs)
+        self.recursed = False        
         
+        
+  
         if aLocation == None:
             self.location = Point(0,0)
         else:
@@ -893,19 +777,26 @@ class UTNode(Node):
             self.incidentEdges = []
         else:
             self.incidentEdges = theIncidentEdges
-                
+        
+        ## Create an empty UnitTask
+        if theUT == None:
+            self.unitTask = UnitTask()
+        else:
+            self.unitTask = theUT
+        
         self.label = aLabel
+        if self.label == None:
+            self.label = self.unitTask.ID
             
-        ## Specifies the distance from the root (i.e. distance to connected PlanningUnitNode)
-        orderVar = self.getHopsToRootNode() ## Returns none if no connected root node
+        ## Specifies the default order within the planning unit (distance from the root)
+        orderVar = self.getHopsToRootNode() 
         if orderVar == None:    ## If can't find a root node, order = 0
             self.order = 0
         else:
             self.order = orderVar
         
-        ## An empty PUxUTRelation is created by default, to be populated later
-        ## This needs to be added to the SGOMS_Model somehow
-        self.pUxUTRelation = thePUxUTRelation
+        ## The adding of a PUxUT relation comes when connecting to a root-connected node
+        self.pUxUTRelation = thePUxUTRelation   ## None by default
         
         ## We are assuming that the root is a PUNode
         #if thePUxUTRelation == None:    ## If there is no Relation specified
@@ -915,10 +806,10 @@ class UTNode(Node):
         
         print "(UTNode) initiated, ", self 
     
-    def __str__(self):
+    def _str_(self):
         '''Returns a string representation of the UTNode'''
         
-        return "UTNode: " + self.label \
+        return "UTNode: " + self.label + " UT: " + self.unitTask.ID \
                 + " (" + str(self.location.x) + "," + str(self.location.y) + ")"
     
     def returnRelation(self):
@@ -929,22 +820,21 @@ class UTNode(Node):
     def returnUnitTask(self):
         '''Returns the UnitTask'''
         
-        return self.pUxUTRelation.unitTask
+        return self.unitTask
     
     def update(self):
         '''Updates the Node
         
-        calls self.updateOrder()
-        and self.updateRelation()'''
+        calls self.updateOrder()'''
         
-        print "(UTNode:", self.label, ".update)"
+        print "(Node.update)"
         self.updateOrder()
-        self.updateRelation()
+        #self.updateRelation()
     
     def updateOrder(self):
         '''Updates self.order based on the distance to root node'''
         
-        print "(UTNode.updateOrder)"
+        print "(Node.updateOrder)"
         orderVar = self.getHopsToRootNode() ## Will return None if can't find root node
         if orderVar == None:    ## If can't find a root node, distance is zero
             self.order = 0
@@ -952,31 +842,21 @@ class UTNode(Node):
             self.order = orderVar
             
     def updateRelation(self):
-        '''Updates self.pUxUTRelation based on the node's distance to the PU root
-        
-        Sets the relation's PU to be that of the PUNode's, none if there is no PUNode root
-        Sets the relation's location to be hops to root node - 1, 0 if there is not PUNode root
-        Does not worry about the UT or PU lists in SGOMS
-        Updates the relation's tuppleID'''
+        '''(Obsolete: function happens in Graph now)
+        Updates self.pUxUTRelation based on the node's distance to the PU root'''
         
         print "(", self.label, ".updateRelation)"
         
         root = self.getRootNode()
         
-        ## If the root is a PUNode, assign the PU to the relation, and the relation's location is order-1
+        ## If the root is a PUNode, add a new relation, add self to PU list, and planning Parent Unit
         if isinstance(root, PUNode):
-            self.pUxUTRelation.planningUnit = root.planningUnit
-            self.pUxUTRelation.location = self.order-1
-            
-            ## I'm not going to worry about Parent Planning Units anymore - 2014.06.27
+            self.pUxUTRelation = PUxUTRelation(self.label, root.planningUnit, self.unitTask)
             ## Inserts the UT in the correct location of the PU's list
-            #root.planningUnit.unitTaskList.insert(self.order-1, self.unitTask)
-            #self.unitTask.setParentPlanningUnit(root.planningUnit)
+            root.planningUnit.unitTaskList.insert(self.order-1, self.unitTask)
+            self.unitTask.setParentPlanningUnit(root.planningUnit)
         else:
-            self.pUxUTRelation.planningUnit = None
-            self.pUxUTRelation.location = 0
-            
-        self.pUxUTRelation.updateTuppleID()
+            pass
         
     def draw(self, aPen):
         '''Draws the UTNode
@@ -989,12 +869,12 @@ class UTNode(Node):
                       Node.RADIUS * 2)
         '''
                  
-        #Draw a black border around the oval
+        #Draw a black border around the rectangle
         aPen.setColor(Color.black)
         aPen.fillOval(self.location.x - UTNode.RADIUS, self.location.y - UTNode.RADIUS, UTNode.RADIUS * 2,
                       UTNode.RADIUS * 2)
         
-        #Draw a green-filled oval around the center of the node (if not selected)
+        #Draw a blue-filled rectangle around the center of the node (if not selected)
         if self.selected == True:
             aPen.setColor(Color.red)
         else:
@@ -1006,7 +886,7 @@ class UTNode(Node):
         # Draw a label at the top right corner of the node
         # Label looks like: UT.label, order within PU
         aPen.setColor(Color.black)
-        stringVar = "ID:" + str(self.pUxUTRelation.ID) + "," + str(self.pUxUTRelation.location)
+        stringVar = self.label + "," + str(self.order)
         aPen.drawString(stringVar, self.location.x + self.RADIUS, self.location.y - self.RADIUS)
 
 class Edge:
@@ -1035,14 +915,10 @@ class Edge:
     def toggleSelected(self):
         '''Changes the selected boolean to True/False depending on previous state'''
         
-        self.selected = not self.selected
-        
-        '''
         if self.selected == False: 
             self.selected = True
         else:
             self.selected = False
-        '''
             
         print "(Edge.toggleSelected) selected = ", self.selected
         
@@ -1088,6 +964,29 @@ class Edge:
         
         print self.startNode.label, "(", self.startNode.location.x, ",", self.startNode.location.y, ")", \
         " --> ", self.endNode.label, "(", self.endNode.location.x, ",", self.endNode.location.y, ")"
+
+class RelationEdge(Edge):
+    '''Specifies the behaviour of an edge containing a PUxUTRelation
+    
+    Inherits from Edge'''
+    
+    def __init__(self, theStartNode, theEndNode, theLabel="Edge", thePUxUTRelation = None):
+        '''Initializes the Edge with a startnode and end node
+        
+        theStartNode should be a Node
+        theEndNode should be a Node
+        thePuxUTRelation should be a PUxUTRelation'''
+        
+        self.startNode = theStartNode
+        self.endNode = theEndNode
+        if theLabel == None:
+            self.label = theStartNode.label + " --> " + theEndNode.label 
+        else:
+            self.label = theLabel
+            
+        self.pUxUTRelation = thePUxUTRelation   ##Not sure if I'm going to use this or not
+        
+        self.selected = False
        
 class Graph:
     '''Defines a collection of Nodes, Edges, and their behaviour'''
@@ -1157,76 +1056,23 @@ class Graph:
     def addNode(self, aNode):
         '''Adds a node to self.nodes
         
-        aNode should be a Node
-        
-        2014.06.27- This '''
+        aNode should be a Node'''
         
         self.nodes.append(aNode)
         
-        self.update()
-        
-    def addNodeAdvanced(self, aLabel, aPoint):
-        '''Creates a new node, with aPoint as its location, and aLabel as its label
-        and adds the node to self.nodes'''
-        
-        node = Node(aLabel, aPoint)
-        
-        self.nodes.append(node)
+        if isinstance(aNode, PUNode):
+            self.SGOMS.addPlanningUnit(aNode.planningUnit)
+            
+        if isinstance(aNode, UTNode):
+            self.SGOMS.addUnitTask(aNode.unitTask)
         
         self.update()
-        
-    def addPUNodeAdvanced(self, aLabel, aPoint):
-        '''Creates a new PUNode, with aLabel and aPoint as the label and point of the PUNode
-        Creates a blank PlanningUnit, which it will feed to the PUNode and add to self.SGOMS
-        
-        aLabel should be a string
-        aPoint should be a Point
-        '''
-
-        pU = PlanningUnit(aLabel)
-        pUNode = PUNode(pU.ID, aPoint, None, pU)
-        
-        self.nodes.append(pUNode)
-        self.SGOMS.addPlanningUnit(pU)
-        
-        self.update()
-        
-        print "(Graph.addPUNode)", pUNode
-        
-    def addUTNodeAdvanced(self, aLabel, aPoint):
-        '''Creates new UTNode, with aLabel and aPoint as the label and point of the UTNode
-        Creates a blank UnitTask and PUxUTRelation, the Unit Task will be fed to the PUxUTRelation
-        The PUxUTRelation will be fed to the UTNode, and added to SGOMS
-        The UTNode will be added to self.nodes
-        
-        By default, this function creates a unique UT to be fed to the relation and SGOMS Model
-        
-        I should make a new function in SGOMS that takes a PUxUTRelation, and adds it to the list,
-        and maybe also adds the unit task to the unitTaskList at the same time
-        ^Nope, want to be able to have same pointers to same UT, for duplicate UTs'''
-        
-        
-        unitTask = UnitTask(aLabel)
-        relation = self.SGOMS.addPUxUTRelationReturnSelf(unitTask)  ##This returns the new relation and stores it
-        
-        self.SGOMS.addUnitTask(relation.unitTask)   ## Adds the new UT to the list of Unit Tasks
-        
-        ## Add the new node
-        uTNode = UTNode(aLabel, aPoint, None, relation)
-        
-        self.nodes.append(uTNode)
-        
-        self.update()
-        
-        print "(Graph.addUTNode)", uTNode
     
     def addEdge(self, startNode, endNode):
         '''Adds an edge to the Nodes' incident edges
         
         startNode should be a Node
         endNode should be a Node'''
-        
-        print "(Graph.addEdge)"
         
         anEdge = Edge(startNode, endNode)
         
@@ -1236,8 +1082,6 @@ class Graph:
         ## The start node is the one where the dragging comes from (see GraphEditor.mouseReleased)
         ## but need to check both nodes if they are UT nodes (connection can come from either direction)
         
-        ## Check if one of the nodes is a UTNode, if a UTNode has been connected to another node,
-        ## it needs to figure out if it is now indirectly connected to a PUNode
         if isinstance(startNode, UTNode):
             self.addEdgeHelper(startNode)
             
@@ -1246,55 +1090,27 @@ class Graph:
         
         self.update()
     
-    def addEdgeHelper(self, theUTNode):
-        '''Specifies behaviour for connecting UTNodes to another node
-        Checks to see if the UTNode has been (indirectly) connected to a PUNode.
-        If so, update the PUNode and UTNode accordingly.
-        SGOMS does not need to 'add' anything new, but needs to modify what is already created 
-        If not, no need to do anything
+    def addEdgeHelper(self, aNode):
+        '''Specifies behaviour for connecting UTNodes together
         
         aNode should be a UTNode'''
         
-        print "(Graph.addEdgeHelper),", theUTNode.label
+        print "(Graph.addEdgeHelper),", aNode.label
         
-        root = theUTNode.getRootNode()  ## Will return a PUNode, if theUTNode is indirectly connected to it
-                                        ## Returns None if not connected to a 'root' node
-        theUTNode.updateOrder() ## Make sure the order is correct
+        root = aNode.getRootNode()
+        
+        aNode.updateOrder() ## Make sure the order is correct
         
         ## If the root is a PUNode:
         if isinstance(root, PUNode):
-            print "(Graph.addEdgeHelper) root node is a PUNode"
-            
-            ## For every connected UTNode to the PUNode, adjust the relations etc. accordingly
-            for uTNode in root.getEveryConnectedNode():
-                if isinstance(uTNode, UTNode):  ## Make sure the node in question is a UTNode
-                    uTNode.update()
-            
-            ## Update the PUNode accordingly
-            root.update()
-            
-            '''
-            ## For every connected UTNode to the PUNode, adjust the relations etc. accordingly
-            for uTNode in root.getEveryConnectedNode():
-                if isinstance(uTNode, UTNode):  ## Make sure the node in question is a UTNode
-                    uTNode.pUxUTRelation.update()
-            
-            ## Update the PUNode accordingly
-            #root.update()
-            
-            ## Append the UT in the PU's list (don't insert, to account for branching, the list is 'semi-ordered')
-            root.planningUnit.unitTaskList.append(theUTNode.pUxUTRelation.unitTask)
+            ## Insert the UT in the correct location of the PU's list (at index 0 if first UT)
+            root.planningUnit.unitTaskList.insert(aNode.order-1, aNode.unitTask)  ##PUNode's order = 0
             ## Set the UT's parent Planning Unit
-            theUTNode.pUxUTRelation.unitTask.setParentPlanningUnit(root.planningUnit)
-            ## Set the UTNode's relation to have the PUNode's PU
-            theUTNode.pUxUTRelation.planningUnit = root.planningUnit
-            ## Set the UTNode's relation to have the correct location (order-1)
-            theUTNode.pUxUTRelation.location = (theUTNode.order-1)
-            ## Make sure the relation's tuppleID is up-to-date
-            theUTNode.pUxUTRelation.updateTuppleID()
-            '''
-            
-            self.SGOMS.printModelContentsAdvanced()
+            aNode.unitTask.setParentPlanningUnit(root.planningUnit)
+            ## Add a new relation to the UTNode, the location is specified by order of UT in PU's list
+            aNode.pUxUTRelation = PUxUTRelation(aNode.label, root.planningUnit, aNode.unitTask)
+            ## Add the relation to the SGOMS list
+            self.SGOMS.pUxUTRelationList.append(aNode.pUxUTRelation)
         ## If the root is not a PUNode, do nothing, just connect as a normal Node would
         else:
             pass
@@ -1327,25 +1143,7 @@ class Graph:
         self.update()
         
     def deleteNode(self, theNode):
-        '''Deletes the parameter node, and all of its incident edges
-        
-        If theNode is a PUNode, delete the PU from the SGOMS model
-        If theNode is a UTNode, delete the relation from the SGOMS model
-        And if the UTNode was the only instance of a UT, delete the UT from the SGOMS model
-        
-        ^2014.07.02, for now, we will remove the UT from the SGOMS model regardless,
-        i.e. we will assume that there are no duplicate UTs in the graph
-        Also, we could in the future make the UTList in SGOMS to be semi-ordered,
-        thus allowing for duplicates, and the current syntax will be ok'''
-        
-        if isinstance(theNode, PUNode):
-            #self.deletePUNode()
-            self.SGOMS.planningUnitList.remove(theNode.planningUnit)
-            
-        if isinstance(theNode, UTNode):
-            #self.deleteUTNode()
-            self.SGOMS.unitTaskList.remove(theNode.pUxUTRelation.unitTask)
-            self.SGOMS.pUxUTRelationList.remove(theNode.pUxUTRelation)
+        '''Deletes the parameter node, and all of its incident edges'''
         
         for edge in theNode.incidentEdges:
             edge.otherEndFrom(theNode).incidentEdges.remove(edge)
@@ -1361,30 +1159,12 @@ class Graph:
         for node in self.nodes:
             #FDO print "(Graph.nodeAt) Node: ", node.label
             c = node.location ##This returns a point
-            
-            ## Check to see what kind of node it is to determine whether the point is contained by the node
-            ## (Different types of nodes have different dimensions
-            if isinstance(node, PUNode):
-                ## We are calculating the square of the distance to avoid negatives
-                dx = (p.x - c.x) * (p.x - c.x)
-                dy = (p.y - c.y) * (p.y - c.y)
-                if dx <= (int(PUNode.WIDTH/2) * int(PUNode.WIDTH/2)) and \
-                    dy <= (int(PUNode.HEIGHT/2) * int(PUNode.HEIGHT/2)):
-                    print "(Graph.nodeAt) returning PUNode ", node.label
-                    return node
-            
-            ## Calculate the square of the distance from the node point and the click point
+        
             d = (((p.x - c.x) * (p.x - c.x)) + ((p.y - c.y) * (p.y - c.y)))
-            
-            if isinstance(node, UTNode):                
-                if d <= (UTNode.RADIUS * UTNode.RADIUS):
-                    print "(Graph.nodeAt) returning UTNode ", node.label
-                    return node
-
-            if isinstance(node, Node):
-                if d <= (Node.RADIUS * Node.RADIUS):  ##If some point is within the radius of the node:
-                    print "(Graph.nodeAt) returning node ", node.label
-                    return node
+            #FDO print "(Graph.nodeAt) d = ", d
+            if d <= (Node.RADIUS * Node.RADIUS):  ##If some point is within the radius of the node:
+                print "(Graph.nodeAt) returning node ", node.label
+                return node
         #FDO print"(Graph.nodeAt) returning None"
         return None
     
@@ -1501,9 +1281,8 @@ class GraphEditor(JPanel, MouseListener, MouseMotionListener, KeyListener):
             
             if aNode == None:   ##If there was no node, check to see if it was an edge
                 anEdge = self.graph.edgeAt(event.getPoint())
-                if anEdge == None: ##If no edge and no node clicked, create a new node
-                    self.graph.addUTNodeAdvanced("newUT", event.getPoint())
-                    #self.graph.addNode(Node("x",event.getPoint()))  
+                if anEdge == None:
+                    self.graph.addNode(Node("x",event.getPoint()))  ##If no edge and no node clicked, create a new node
                 else:
                     anEdge.toggleSelected() ##If there was an edge, select it
             else:   ## If there was a node that was clicked, select it
@@ -1617,7 +1396,7 @@ class GraphEditor(JPanel, MouseListener, MouseMotionListener, KeyListener):
     def update(self):
         '''Repaints the GraphEditor based on the model (graph)'''
         
-        print "(GraphEditor.update) Begin Update"
+        print "(update) Begin Update"
         self.requestFocus()
         self.removeEventHandlers()
         self.repaint()
@@ -1735,13 +1514,13 @@ map1.addEdge(quebec, halifax)
 
 toronto.rootNode = True
 map1.update()
+'''
 
-
-#toronto.getEveryConnectedNode()
-#montreal.getEveryConnectedNode()
+#toronto.getHopsToRootNode()
+#montreal.getHopsToRootNode()
 #quebec.getHopsToRootNode()
 #halifax.getHopsToRootNode()
-'''
+
         
 '''
 print "number of connected nodes to toronto = " 
@@ -1763,27 +1542,7 @@ for item in connected:
     print item.label, ",", item.recursed
 '''
 
-## New SGOMS Test Code
-
-## The procedure for adding PUNodes and UTNodes
-## 1. Create map (creates a blank SGOMS_Model)
-## 2. map.addPUNode(label, point) adds a PU to SGOMS and a PUNode to Graph.nodes
-## 3. map.addUTNode(label, point) adds a UT to SGOMS, a relation to SGOMS, and a UTNode to Graph.nodes
-
-## Then add the edges
-
-map1 = Graph("SGOMS Test")
-map1.addPUNodeAdvanced("PU1", Point(100,100))
-map1.addUTNodeAdvanced("UT1", Point(100,200))
-map1.addUTNodeAdvanced("UT2", Point(100,300))
-
-#map1.addEdge()
-
-map1.SGOMS.printModelContentsAdvanced()
-
-
-'''
-## Original SGOMS Test Code
+## SGOMS Test Code
 ## The Planning Units and UTs
 pu1 = PlanningUnit("PU1")
 ut1 = UnitTask("UT1")
@@ -1817,9 +1576,9 @@ print map1
 
 #for node in map1.nodes:
 #    print node.recursed
-'''
+
 frame = GraphEditorFrame("Map1", map1)
 
-#map1.SGOMS.printModelContentsAdvanced()
+map1.SGOMS.printModelContentsAdvanced()
 
 

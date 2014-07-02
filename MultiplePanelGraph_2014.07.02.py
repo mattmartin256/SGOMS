@@ -6,7 +6,10 @@ Created on Jun 13, 2014
 This is an Extension of SimpleGraph1, where I include multiple JPanels into my Frame
 
 I refactored the code on June 25, making the PUs and UTs 'dumber',
-moving all the 'smart' functionality to SGOMS_Model to reduce moving parts. 
+moving all the 'smart' functionality to SGOMS_Model to reduce moving parts.
+
+July 2, 2014:
+The basic functionality of the graph seems to work, now I'm moving on to hooking it up to ACT-R
 '''
 
 from java.awt import *
