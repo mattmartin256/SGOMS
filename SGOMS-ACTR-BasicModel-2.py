@@ -7,9 +7,11 @@ log=ccm.log()
 
 from ccm.lib.actr import *
 
-'''2014.05.26
+'''2014.07.07
 This is going to be a simple two planning-unit model based on Gears of War.
 Each planning unit will have two unit tasks that fire.
+
+I am changing SGOMS-ACTR-BasicModel-1 to make it more generic, and less hard-coded
 
 The planning units will be:
 Take Area
@@ -149,7 +151,7 @@ class MyAgent(ACTR):
         DM.add('planning_unit:hold_area    cuelag:start         cue:find_cover     unit_task:finished')
         #DM.add ('planning_unit:hold_area    cuelag:find_cover    cue:kill_enemies   unit_task:finished')       
 
-        b_context.set('area:not_clear status:not_started completed:no')  ## Here the initial context is set
+        b_context.set('area:not_clear cover:not_taken status:not_started completed:no')  ## Here the initial context is set
 
 
     ########### These are the planning units
@@ -163,7 +165,7 @@ class MyAgent(ACTR):
         b_unit_task.set('unit_task:advance state:running')
         b_context.set('area:not_clear status:started')  # update context
 
-    def hold_area(b_context='area:clear status:not_started'):
+    def hold_area(b_context='area:clear cover:not_taken status:not_started'):
         print "(hold_area) Fires!"
         b_plan_unit.set('planning_unit:hold_area cuelag:none cue:start unit_task:find_cover state:running')
         b_unit_task.set('unit_task:find_cover state:start')
@@ -180,10 +182,12 @@ class MyAgent(ACTR):
         print "(kill_enemies_unit_task) Fires!"
         b_unit_task.set('unit_task:kill_enemies state:finished')  ## This should trigger the last_unit_task to fire
         ## It should request DM for the next UT, find the 'finished' flag in the PU buffer, and change the context
+        b_context.set('area:clear cover:not_taken status:not_started')
 
     def find_cover(b_unit_task='unit_task:find_cover state:start'): ##This is the unit task for Hold Area
         print "(find_cover_unit_task) Fires!"
         b_unit_task.set('unit_task:find_cover state:finished')  ## This should trigger the last_unit_task to fire
+        b_context.set('area:clear cover:taken status:completed')
 
 
     ########## request a unit task  ## These are kind of global methods for setting planning units in motion
@@ -221,7 +225,7 @@ class MyAgent(ACTR):
         b_unit_task.set('stop')
         print "(last_unit_task) Finished setting the unit task buffer to 'stop'"
         print "(last_unit_task) About to set the context buffer..."
-        b_context.set('area:clear status:completed')
+        #b_context.set('area:clear status:completed')
         print "(last_unit_task) Finished setting context buffer to: 'area:clear status:completed'"
         print "(last_unit_task) Production Finished."
 

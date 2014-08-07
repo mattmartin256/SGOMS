@@ -9,30 +9,74 @@ I refactored the code on June 25, making the PUs and UTs 'dumber',
 moving all the 'smart' functionality to SGOMS_Model to reduce moving parts. 
 '''
 
+'''
+## Old Sloppy Import Statements
+from java.lang import System
 from java.awt import *
 from java.awt.event import *
 from java.util import *
 from javax.swing import *
+'''
+
+## New Shiny Import Statements
+from javax.swing import JFrame
+from javax.swing import JPanel
+from javax.swing import JButton
+from javax.swing import JLabel
+from javax.swing import JTextField
+from javax.swing import BorderFactory
+from javax.swing import JMenu
+from javax.swing import JMenuBar
+from javax.swing import JMenuItem
+from javax.swing import JDialog
+
+from java.awt import Point
+from java.awt import Color
+from java.awt import FlowLayout
+from java.awt import GridLayout
+from javax.swing import BoxLayout
+
+from java.awt.event import KeyEvent
+from java.awt.event import KeyListener
+from java.awt.event import MouseListener
+from java.awt.event import MouseMotionListener
 
 import os
 
 ########
-# The SGOMS-Related model stuff from ACT-R_GUI-2 (As of 2014.06.17
+# The SGOMS-Related model stuff from ACT-R_GUI-2 (As of 2014.06.17)
 ########
 
 class PlanningUnit:
     '''An SGOMS Planning Unit that contains a list of Unit Tasks'''
 
-    def __init__(self, theID="Planning Unit", theUnitTaskList=None):
+    def __init__(self, theID="Planning Unit", theUnitTaskList=None, theFiringConditions=None, theBehaviour=None):
         '''Creates a PlanningUnit
 
         theID should be a string that identifies the Planning Unit
-        theUnitTaskList should be a list of UnitTasks'''
+        theUnitTaskList should be a list of UnitTasks
+        theFiringConditions should be a list of strings representing the states of relevant buffers
+            required to fire the PU
+        theBehaviour should be a list of strings representing the effect of the PU on various buffers /
+            the environment (optional, can be done entirely via UTs or methods)'''
 
         self.ID = theID
         self.unitTaskList = theUnitTaskList
         if theUnitTaskList == None:
             self.unitTaskList = []
+            
+        self.firingConditions = theFiringConditions
+        if theFiringConditions == None:
+            self.firingConditions = []  ## By default the firingConditions is an empty list, 
+                                        ## to be populated by strings later, representing relevant context buffer info
+                                        ## that is required to fire the planning unit production
+                                        
+        self.behaviour = theBehaviour
+        if theBehaviour == None:
+            self.behaviour = []         ## By default the behaviour is an empty list, 
+                                        ## to be populated by strings later, representing relevant context buffer info
+            ## By default, the behaviour of a Unit Task should be pass (for python syntax reasons)
+            self.behaviour.append("pass")
 
         print "(PlanningUnit.__init__) Planning Unit Created: ", self.ID
         self.printPlanningUnitContents()
@@ -68,19 +112,31 @@ class PlanningUnit:
 class UnitTask:
     '''An SGOMS Unit Task'''
     
-    def __init__(self, theID="Unit Task", theParentPlanningUnits=None):
+    def __init__(self, theID="Unit Task", theParentPlanningUnits=None, theFiringConditions=None, theBehaviour=None):
         '''Creates a Unit Task
 
         ID is a string that names the Unit Task
-        theParentPlanningUnits should be a list of PlanningUnits'''
+        theParentPlanningUnits should be a list of PlanningUnits
+        theFiringConditions should be a list of strings that represent the firing conditions of a production
+        theBehaviour should be a list of strings that represent the behaviour of a production'''
 
         self.ID = theID
         self.parentPlanningUnits = theParentPlanningUnits
         if theParentPlanningUnits == None:
-            self.parentPlanningUnits = []       
+            self.parentPlanningUnits = []   
+            
+        self.firingConditions = theFiringConditions
+        if theFiringConditions == None:
+            self.firingConditions = []    
+            
+        self.behaviour = theBehaviour
+        if theBehaviour == None:
+            self.behaviour = []
+            ## By default, the behaviour of a Unit Task should be pass (for python syntax reasons)
+            self.behaviour.append("pass")
 
         print "(UnitTask.__init__) Unit Task Created: ", self.ID,
-        self.printParentPlanningUnits()
+        #self.printParentPlanningUnits()
         
     def __str__(self):
         '''Returns a string representation of the Unit Task'''
@@ -132,6 +188,38 @@ class PUxUTRelation:
 
         print "(PUxUTRelation.init) Created: ", self.tuppleID
         
+        #######################
+        ## ACT-R related stuff
+        #######################
+        ## Each Planning Unit in SGOMS is represented by a series of chunks in DM that contains info about:
+        ## The Planning Unit the Unit Task belongs to, the associated Unit Task, the cue to fire the Unit Task
+        ## and the 'cuelag'- the cue of the previous Unit Task (following the Rooster's model)
+        ## the cuelag is the previous cue ('none' if no previous cue)
+        ## the cue is the previous unit_task ('start' if no previous unit_task). E.g.
+        ## DM.add ('planning_unit:prep_wrap    cuelag:none          cue:start          unit_task:veggies')
+        ## DM.add ('planning_unit:prep_wrap    cuelag:start         cue:veggies        unit_task:finished')
+        ##
+        ## The PUxUTRelations will each have a string representation of the DM chunk to be outputed to ACT-R
+        #######################
+        
+        ## Maintain some variables to populate the DM string
+        
+        if self.planningUnit != None:
+            self.planning_unit_DM = self.planningUnit.ID
+        else:
+            self.planning_unit_DM = ''     ## This will not work in ACT-R, it is equivalent to None 
+        
+        self.cuelag_DM = 'none'
+        self.cue_DM = 'start'
+        
+        if self.unitTask != None:
+            self.unit_task_DM = self.unitTask.ID
+        else:
+            self.unit_task_DM = ''
+            
+        self.DM_string = 'planning_unit:' + self.planning_unit_DM + ' cuelag:' + self.cuelag_DM \
+                        + ' cue:' + self.cue_DM + ' unit_task:' + self.unit_task_DM 
+        
     def updateTuppleID(self):
         '''Updates the tuppleID, based on any changes made to the PUxUTRelation'''
         
@@ -141,14 +229,22 @@ class PUxUTRelation:
             self.tuppleID = "PUxUTRelation", self.ID, self.planningUnit.ID, self.unitTask.ID, self.location
             
         print "(PUxUTRelation.updateTuppleID) new ID:", self.tuppleID
-
-
+        
+    def updateDM_string(self):
+        '''Updates the DM_string, based on any changes made to the PUxUTRelation'''
+        
+        self.DM_string = 'planning_unit:' + self.planning_unit_DM + ' cuelag:' + self.cuelag_DM \
+                        + ' cue:' + self.cue_DM + ' unit_task:' + self.unit_task_DM
+                        
+        print "(PUxUTRelation.updateDM_string) new DM_string:", self.DM_string
+        
+        
 ##### The Model #####
         
 class SGOMS_Model:
     '''The underlying model that the GUI runs on'''
 
-    def __init__(self, thePlanningUnitList=None, theUnitTaskList=None, thePUxUTRelationList=None):
+    def __init__(self, thePlanningUnitList=None, theUnitTaskList=None, thePUxUTRelationList=None, theBufferList=None):
         '''The initializing method for the model
 
         planningUnitList should be a list of Planning Units
@@ -166,10 +262,33 @@ class SGOMS_Model:
 
         if thePUxUTRelationList == None:   
             self.pUxUTRelationList = []
+            
+        if theBufferList == None:
+            self.bufferList = []
+            
+        ## The default buffers that every SGOMS_Model must have
+        self.bufferList.append("buffer_context")
+        self.bufferList.append("buffer_DM")
+        self.bufferList.append("buffer_planning_unit")
+        self.bufferList.append("buffer_unit_task")
+        self.bufferList.append("buffer_method")
+        self.bufferList.append("buffer_operator")
+
         
         ## A counter to keep track of the number of relations in the model
         ## Is used as a unique ID of each relation
         self.relationCounter = 0
+        
+        ## The initial behaviour for ACT-R must be set somewhere
+        ## This will be a list of strings
+        self.initialBehaviour = []
+        self.initialBehaviour.append("pass")
+        
+    def __str__(self):
+        '''Prints a string representation of the SGOMS_Model'''
+        
+        return "SGOMS_Model with " + str(len(self.planningUnitList)) + " Planning Units, " + \
+            str(len(self.unitTaskList)) + " Unit Tasks, and " + str(len(self.pUxUTRelationList)) + "PUxUT Relations"
             
 
     def addPlanningUnit(self, thePlanningUnit):
@@ -197,11 +316,11 @@ class SGOMS_Model:
         ## If there is a Parent Planning Unit supplied
         if theParentPlanningUnit != None:
             ## Append the unit task to the Parent Planning Unit (do not prevent duplicates)
-            theParentPlanningUnit.unitTasks.append(theUnitTask)
+            theParentPlanningUnit.unitTaskList.append(theUnitTask)
             
             ## Prevent duplicate entries of Parent PUs while adding the Parent to the list
             if theParentPlanningUnit not in theUnitTask.parentPlanningUnits:
-                theUnitTask.parentPlanningUnits.append()
+                theUnitTask.parentPlanningUnits.append(theUnitTask)
 
         print "(Model.addUnitTask): ", theUnitTask.ID, " added. Total number of Unit Tasks in the model = ", len(self.unitTaskList)
         
@@ -287,22 +406,96 @@ class SGOMS_Model:
             print "There are ", len(self.pUxUTRelationList), " PUxUTRelationships in the Model:"
             for item in self.pUxUTRelationList:
                 print item.tuppleID
+                print item.DM_string
         else:
             print "There are no PUxUTRelationships in the Model"
 
         print "==== End of (printModelContentsAdvanced) ===="    
+        
+    def getPrecedingRelations(self, theRelation):
+        '''Returns a list of PUxUTRelations that have a location of theRelation-1
+        
+        theRelation should be a PUxUTRelation contained in self.pUxUTRelationList'''
+               
+        returnList = []
+        
+        ## If they belong to the same planning unit, and item.location is theRelation-1, add to returnList
+        for item in self.pUxUTRelationList:
+            if item.planningUnit == theRelation.planningUnit and item.planningUnit !=None:
+                if item.location == theRelation.location-1:
+                    returnList.append(item)
+        
+        print "(SGOMS_Model.getPrecedingRelations)", theRelation.ID, "found ", len(returnList), "preceding relations"
+        return returnList
+    
+    def getSucceedingRelations(self, theRelation):
+        '''Returns a list of PUxUTRelations that have a location of theRelation+1
+        
+        theRelation should be a PUxUTRelation contained in self.pUxUTRelationList''' 
+        
+        returnList = []
+        
+        ## If they belong to the same planning unit, and item.location is theRelation-1, add to returnList
+        for item in self.pUxUTRelationList:
+            if item.planningUnit == theRelation.planningUnit and item.planningUnit !=None:
+                if item.location == theRelation.location+1:
+                    returnList.append(item)
+        
+        print "(SGOMS_Model.getSucceedingRelations)", theRelation.ID, "found ", len(returnList), "succeeding relations"
+        return returnList
+        
+    def updateRelation(self, theRelation):
+        '''Takes a relation and updates its planning_unit_DM, cuelag, cue, unit task, and DM string
+        based on its preceding relation in self.pUxUTRelationList
+        
+        theRelation should be a PUxUTRelation that is contained within self.pUxUTRelationList'''
+        
+        print "(SGOMS_Model.updateRelation), update: ", theRelation.ID
+        
+        precedingRelations = self.getPrecedingRelations(self)   ## Returns a list of preceding relations
+        
+        ## Set the planning_unit_DM string, regardless if there are preceding relations
+        if theRelation.planningUnit != None:
+            theRelation.planning_unit_DM = theRelation.planningUnit.ID
+        
+        ## Set the unit_task_DM string, regardless if there are preceding relations
+        if theRelation.unitTask != None:
+            theRelation.unit_task_DM = theRelation.unitTask.ID
+        
+        ## Set the cue to be 'start' if theRelation's location is 0, and the culag to be 'none'
+        if theRelation.location == 0:
+            print "(SGOMS_Model.updateRelation) self.location == 0"
+            ## Set the cuelag to 'none'
+            self.pUxUTRelation.cuelag = 'none'
+            ## Set the cue ('start' if location = 0)
+            self.pUxUTRelation.cue_DM = 'start'
+        
+        if len(precedingRelations) > 0: ## If there are preceding relations...
+            print "(SGOMS_Model.updateRelation) self.location is not 0, setting cue etc."
+            #FDO print "(SGOMS_Model.updateRelation) preceding relation = ", precedingRelations[0]
+            #FDO print "(SGOMS_Model.updateRelation) preceding relations's cue_DM = ", precedingRelations[0].cue_DM 
+            self.pUxUTRelation.cuelag_DM = precedingRelations[0].cue_DM ## Pick an arbitrary node for now
+            #FDO print "(UTNode.updateRelation) self.cuelag=", self.pUxUTRelation.cuelag_DM
+            self.pUxUTRelation.cue_DM = precedingRelations[0].unitTask.ID
+            
+        theRelation.updateTuppleID()
+        theRelation.updateDM_string()
+        
 
     ########## Write to ACT-R ##########
 
     def outputToACTR(self):
-        '''Takes what is in the model and outputs it into python ACT-R readable code'''
+        '''Takes what is in the model and outputs it into Python ACT-R readable code'''
 
         directory = os.getcwd()
-        print directory
+        print "(SGOMS_Model.outputToACTR) Directory = " + directory
 
         f = open("TestWriting.py", "w")  ## Open a new file for writing
 
         ## Write the basic import statements
+        f.write("import sys\n")
+        f.write("sys.path.insert(0, 'C:/CCMSuite/CCMSuite/')\n")
+        
         f.write("import ccm\n")
         f.write("log=ccm.log()\n")
         f.write("from ccm.lib.actr import *\n\n")
@@ -313,21 +506,90 @@ class SGOMS_Model:
 
         ## Write the Agent
         f.write("class MyAgent(ACTR):\n")
-        f.write("    focus=Buffer()\n")
-        f.write("    DMbuffer=Buffer()\n")
-        f.write("    DM=Memory(DMbuffer)\n\n")
+        f.write("    b_context=Buffer()\n")
+        f.write("    b_plan_unit=Buffer()\n")                        ## There is a planning unit buffer which keeps track of the relevant planning unit                       
+        f.write("    b_unit_task=Buffer()\n")
+        f.write("    b_DM=Buffer()\n")
+        f.write("    DM=Memory(b_DM)\n\n")
 
-        ## Write the init method
+        ## Write the init method, adding chunks to DM
         f.write("    def init():\n")
-        f.write("        pass\n\n")
+        for relation in self.pUxUTRelationList:
+            f.write("        DM.add('" + relation.DM_string + "')\n")
+        ## How to handle the final unit task?
+        ## ^We are going to have default values for UT and cue that the user can change if they want
+        
+        ## For syntax reasons, there should be a pass by default at the end of each function
+        #f.write("        pass    ## Required for Python syntax reasons when there are no Unit Tasks in the Model")
+        
+        ## Write the initial behaviour of the model
+        
+        f.write("\n\n##Initial Model Behaviours\n")
+        
+        if len(self.initialBehaviour) < 1:
+            f.write("        pass\n")
+        for behaviour in self.initialBehaviour:
+            f.write("        " + behaviour + "\n")
+            
+        ## For syntax reasons, there should be a pass by default at the end of each function
+        #f.write("        pass    ## Required for Python syntax reasons when there are no Unit Tasks in the Model")
+        
                       
-        ## Write the Planning Units/productions
+        ## Write the Planning Unit Productions
+        f.write("    \n## Planning Units\n")
         for planningUnit in self.planningUnitList:
-            f.write("    def " + planningUnit.ID + "():\n")
-            f.write("        pass\n\n")
+            f.write("\n    def " + planningUnit.ID + "(")
+            for firingCondition in planningUnit.firingConditions:
+                f.write(firingCondition + ",\n")
+                
+            f.write("):\n")
+            for behaviour in planningUnit.behaviour:
+                f.write("        " + behaviour + "\n")
+                
+        ## For syntax reasons, there should be a pass by default at the end of each function
+        #f.write("        pass    ## Required for Python syntax reasons when there are no Planning Units in the Model")
+
+        ## Write the Unit Task Productions
+        f.write("    \n## Unit Tasks\n")
+        for unitTask in self.unitTaskList:
+            f.write("\n    def " + unitTask.ID + "(")
+            for firingCondition in unitTask.firingConditions:
+                f.write(firingCondition + ",\n") 
+            f.write("):\n")
+            for behaviour in unitTask.behaviour:
+                f.write("        " + behaviour + "\n")
+                
+        ## Write the general productions that handle choosing 
+        
+        f.write("\n## Global productions for retrieving Unit Tasks from DM\n\n")
+        
+        ## Request Next Unit Task
+        f.write("    def request_next_unit_task(b_plan_unit='planning_unit:?planning_unit " \
+                + "cuelag:?cuelag cue:?cue unit_task:?unit_task state:running', " \
+                + "b_unit_task='unit_task:?unit_task state:finished'):\n")
+        f.write("        DM.request('planning_unit:?planning_unit cue:?unit_task unit_task:? cuelag:?cue')\n")
+        f.write("        b_plan_unit.set('planning_unit:?planning_unit cuelag:?cuelag " \
+                + "cue:?cue unit_task:?unit_task state:retrieve')\n\n")
+        
+        ## Retrive Next Unit Task
+        f.write("    def retrieve_next_unit_task(b_plan_unit='state:retrieve', " \
+                                + "b_DM='planning_unit:?planning_unit cuelag:?cuelag cue:?cue!finished unit_task:?unit_task'):\n")
+        f.write("        b_plan_unit.set('planning_unit:?planning_unit cuelag:?cuelag " \
+                + "cue:?cue unit_task:?unit_task state:running')\n")
+        f.write("        b_unit_task.set('unit_task:?unit_task state:start')\n\n")
+        
+        ## Last Unit Task
+        f.write("    def last_unit_task(b_unit_task='unit_task:finished state:start', " \
+                       + "b_plan_unit='planning_unit:?planning_unit'):\n")
+        f.write("        b_unit_task.set('stop')\n\n")
+        
+        ########### Not sure what to do about setting the context at end of PU, how to make general?
+        #f.write("        b_context.set('customer:new order:wrap status:prepped done:?planning_unit')\n\n")
+
 
         ## Write the code to run the model
 
+        f.write("## Code to run the model\n")
         f.write("tim = MyAgent()\n")
         f.write("env = MyEnvironment()\n")
         f.write("env.agent = tim\n")
@@ -931,6 +1193,23 @@ class UTNode(Node):
         
         return self.pUxUTRelation.unitTask
     
+    def getPrecedingUTNodes(self):
+        '''Returns a list of nodes where the node's order is self.order -1
+        '''
+        
+        connectedNodes = self.getEveryConnectedNode()
+        returnList = []
+        
+        for node in connectedNodes:
+            if isinstance(node, UTNode):
+                if node.order == self.order-1:
+                    returnList.append(node)
+                    
+        print "(UTNode.getPrecedingUTNodes), returning: "
+        for item in returnList:
+            print item.label
+        return returnList
+    
     def update(self):
         '''Updates the Node
         
@@ -956,27 +1235,59 @@ class UTNode(Node):
         
         Sets the relation's PU to be that of the PUNode's, none if there is no PUNode root
         Sets the relation's location to be hops to root node - 1, 0 if there is not PUNode root
+        Sets the relation's planning_unit_DM, cuelag_DM, cue_DM, and unit_task_DM, based on the location
         Does not worry about the UT or PU lists in SGOMS
-        Updates the relation's tuppleID'''
+        Updates the relation's tuppleID and DM_string'''
         
         print "(", self.label, ".updateRelation)"
+        
         
         root = self.getRootNode()
         
         ## If the root is a PUNode, assign the PU to the relation, and the relation's location is order-1
         if isinstance(root, PUNode):
+            print "(UTNode.updateRelation) root is a PUNode"
             self.pUxUTRelation.planningUnit = root.planningUnit
             self.pUxUTRelation.location = self.order-1
             
             ## I'm not going to worry about Parent Planning Units anymore - 2014.06.27
-            ## Inserts the UT in the correct location of the PU's list
-            #root.planningUnit.unitTaskList.insert(self.order-1, self.unitTask)
-            #self.unitTask.setParentPlanningUnit(root.planningUnit)
-        else:
+            
+            ### ACT-R Stuff ###
+            ## Set the planning_unit_DM string
+            self.pUxUTRelation.planning_unit_DM = root.planningUnit.ID
+            
+            ## Set the cuelag (previous relation's cue, 'none' if location = 0), 
+            ###### This should probably be changed in future versions #######
+            if self.pUxUTRelation.location == 0:
+                print "(UTNode.updateRelation) self.location == 0"
+                self.pUxUTRelation.cuelag = 'none'
+                ## Set the cue ('start' if location = 0)
+                self.pUxUTRelation.cue_DM = 'start'
+            else:   ## If the location is not 0:
+                print "(UTNode.updateRelation) self.location is not 0, setting cuelag etc."
+                precedingNodes = self.getPrecedingUTNodes() ## A list of nodes with an order of self.order-1
+                #FDO print "(UTNode.updateRelation) preceding node = ", precedingNodes[0]
+                #FDO print "(UTNode.updateRelation) preceding node's cue_DM = ", precedingNodes[0].pUxUTRelation.cue_DM 
+                self.pUxUTRelation.cuelag_DM = precedingNodes[0].pUxUTRelation.cue_DM ## Pick an arbitrary node for now
+                #FDO print "(UTNode.updateRelation) self.cuelag=", self.pUxUTRelation.cuelag_DM
+                self.pUxUTRelation.cue_DM = precedingNodes[0].pUxUTRelation.unitTask.ID
+        
+        else:   ## If there is no PUNode as a root, set the attributes back to their defaults
+            print "(UTNode.updateRelation) there is no PUNode Root"
             self.pUxUTRelation.planningUnit = None
             self.pUxUTRelation.location = 0
             
+            self.pUxUTRelation.planning_unit_DM = ''
+            self.pUxUTRelation.cuelag_DM = 'none'
+            self.pUxUTRelation.cue_DM = 'start'
+            
+        self.pUxUTRelation.unit_task_DM = self.pUxUTRelation.unitTask.ID
+        
         self.pUxUTRelation.updateTuppleID()
+        self.pUxUTRelation.updateDM_string()
+        
+        
+        
         
     def draw(self, aPen):
         '''Draws the UTNode
@@ -1006,7 +1317,8 @@ class UTNode(Node):
         # Draw a label at the top right corner of the node
         # Label looks like: UT.label, order within PU
         aPen.setColor(Color.black)
-        stringVar = "ID:" + str(self.pUxUTRelation.ID) + "," + str(self.pUxUTRelation.location)
+        stringVar = str(self.pUxUTRelation.unitTask.ID) + ", ID:" + str(self.pUxUTRelation.ID) + \
+        ", loc:" + str(self.pUxUTRelation.location) 
         aPen.drawString(stringVar, self.location.x + self.RADIUS, self.location.y - self.RADIUS)
 
 class Edge:
@@ -1175,6 +1487,19 @@ class Graph:
         
         self.update()
         
+    def addPUNode(self, aPUNode):
+        '''Adds aPUNode to self.nodes
+        adds the PUNode's PU to the SGOMS_Model
+        
+        aPUNode should be a PUNode, with an instantiated planning unit'''
+        
+        self.nodes.append(aPUNode)
+        self.SGOMS.addPlanningUnit(aPUNode.planningUnit)
+        
+        self.update()
+        
+        print "(Graph.addPUNode),", aPUNode 
+        
     def addPUNodeAdvanced(self, aLabel, aPoint):
         '''Creates a new PUNode, with aLabel and aPoint as the label and point of the PUNode
         Creates a blank PlanningUnit, which it will feed to the PUNode and add to self.SGOMS
@@ -1191,7 +1516,22 @@ class Graph:
         
         self.update()
         
-        print "(Graph.addPUNode)", pUNode
+        print "(Graph.addPUNodeAdvanced)", pUNode
+        
+    def addUTNode(self, aUTNode):
+        '''Adds aUTNode to self.nodes
+        adds aUTNode's relation to the SGOMS_Model
+        adds aUTNode's UT to the SGOMS_Model
+        
+        aUTNode should be a UTNode, with an instantiated relation'''
+        
+        self.nodes.append(aUTNode)
+        self.SGOMS.pUxUTRelationList.append(aUTNode.pUxUTRelation)
+        self.SGOMS.addUnitTask(aUTNode.pUxUTRelation.unitTask)
+        
+        self.update()
+        
+        print "(Graph.addUTNode)", aUTNode
         
     def addUTNodeAdvanced(self, aLabel, aPoint):
         '''Creates new UTNode, with aLabel and aPoint as the label and point of the UTNode
@@ -1218,7 +1558,32 @@ class Graph:
         
         self.update()
         
-        print "(Graph.addUTNode)", uTNode
+        print "(Graph.addUTNodeAdvanced)", uTNode
+    
+    def addUTNodeAdvancedNew(self, aUnitTask, aPoint):
+        '''Creates new UTNode, with aUnitTask aPoint as the UnitTask and point of the UTNode
+        Creates a blank PUxUTRelation, the Unit Task will be fed to the PUxUTRelation
+        The PUxUTRelation will be fed to the UTNode, and added to SGOMS
+        The UTNode will be added to self.nodes
+        
+        By default, this function creates a unique UT to be fed to the relation and SGOMS Model
+        
+        I should make a new function in SGOMS that takes a PUxUTRelation, and adds it to the list,
+        and maybe also adds the unit task to the unitTaskList at the same time
+        ^Nope, want to be able to have same pointers to same UT, for duplicate UTs'''
+        
+        relation = self.SGOMS.addPUxUTRelationReturnSelf(aUnitTask)  ##This returns the new relation and stores it
+        
+        self.SGOMS.addUnitTask(relation.unitTask)   ## Adds the new UT to the list of Unit Tasks
+        
+        ## Add the new node
+        uTNode = UTNode(aUnitTask.ID, aPoint, None, relation)
+        
+        self.nodes.append(uTNode)
+        
+        self.update()
+        
+        print "(Graph.addUTNodeAdvancedNew)", uTNode
     
     def addEdge(self, startNode, endNode):
         '''Adds an edge to the Nodes' incident edges
@@ -1363,7 +1728,7 @@ class Graph:
             c = node.location ##This returns a point
             
             ## Check to see what kind of node it is to determine whether the point is contained by the node
-            ## (Different types of nodes have different dimensions
+            ## (Different types of nodes have different dimensions)
             if isinstance(node, PUNode):
                 ## We are calculating the square of the distance to avoid negatives
                 dx = (p.x - c.x) * (p.x - c.x)
@@ -1441,6 +1806,24 @@ class Graph:
         '''Prints the graph in the form of label(x nodes, y edges)'''
         
         print self.label, "(", len(self.nodes), ",", len(self.returnEdges()), ")"
+
+class DialogClientInterface:
+    '''An interface for dealing with custom dialog boxes'''
+    
+    def __init__(self):
+        pass
+    
+    def dialogFinished(self):
+        '''Specifies the behaviour for closing the dialog box when data is entered and should be kept
+        Each implementation of a DialogClientInterface will overrite this method'''
+        
+        pass
+    
+    def dialogCancelled(self):
+        '''Specifies the behaviour for closing the dialog box when data should be discarded
+        Each implementation of a DialogClientInterface will overwrite this method'''
+        
+        pass 
             
 class GraphEditor(JPanel, MouseListener, MouseMotionListener, KeyListener):
     '''The user interface for the graph example'''
@@ -1502,7 +1885,7 @@ class GraphEditor(JPanel, MouseListener, MouseMotionListener, KeyListener):
             if aNode == None:   ##If there was no node, check to see if it was an edge
                 anEdge = self.graph.edgeAt(event.getPoint())
                 if anEdge == None: ##If no edge and no node clicked, create a new node
-                    self.graph.addUTNodeAdvanced("newUT", event.getPoint())
+                    self.graph.addUTNodeAdvanced("finished", event.getPoint())
                     #self.graph.addNode(Node("x",event.getPoint()))  
                 else:
                     anEdge.toggleSelected() ##If there was an edge, select it
@@ -1622,14 +2005,178 @@ class GraphEditor(JPanel, MouseListener, MouseMotionListener, KeyListener):
         self.removeEventHandlers()
         self.repaint()
         self.addEventHandlers()
+
+class UnitTaskSimpleDialogPanel(JPanel):
+    '''A panel that specifies the text fields etc. for creating/editing a new Unit Task
+    (This panel contains fields for )
+    Used by UnitTaskDialog'''
+    
+    def __init__(self, aGraph):
+        '''Initializes the UnitTaskPanel with aGraph as a model that can feed it inputs
         
+        aGraph should be a Graph'''
+        
+        super(UnitTaskSimpleDialogPanel, self).__init__()
+        
+        self.graph = aGraph
+        
+        self.components = []
+        
+        ## Create the Labels and store them in the components list
+        
+    def reinitialize(self, aGraph):
+        '''Reinitializes the panel when a new field is created
+        
+        for each component in self.components, add the component'''
+        
+
+class UnitTaskDialogPanel(JPanel):
+    '''A panel that specifies the text fields etc. for creating/editing a new Unit Task
+    (This panel contains fields for specifying ACT-R behaviour)
+    Used by UnitTaskDialog'''
+    
+    def __init__(self, aGraph):
+        '''Initializes the UnitTaskPanel with aGraph as a model that can feed it inputs
+        
+        aGraph should be a Graph'''
+        
+        super(UnitTaskDialogPanel, self).__init__()
+        
+        self.graph = aGraph
+        
+        ## Create the Labels
+        self.nameLabel = JLabel("Enter Name of Unit Task")
+        self.firingConditionsLabel = JLabel("Specify Firing Conditions:")
+        self.setFiringBufferLabel = JLabel("Set Buffer:")
+        self.setFiringSlotNameLabel = JLabel("Set Slot Name:")
+        self.setFiringSlotValueLabel = JLabel("Set Slot Value:")
+        self.behavioursLabel = JLabel("Specify Behaviours:")
+        self.setBehaviourBufferLabel = JLabel("Set Buffer:")
+        self.setBehaviourSlotNameLabel = JLabel("Set Slot Name:")
+        self.setBehaviourSlotValueLabel = JLabel("Set Slot Value:")
+        
+        ## Create an empty label as a filler
+        self.emptyLabel1 = JLabel()
+        self.emptyLabel2 = JLabel()
+        
+        ## Create the text entry fields
+        self.nameEntry = JTextField()
+        self.firingBufferEntry = JTextField()
+        self.firingSlotNameEntry = JTextField()
+        self.firingSlotValueEntry = JTextField()
+        self.behaviourBufferEntry = JTextField()
+        self.behaviourSlotNameEntry = JTextField()
+        self.behaviourSlotValueEntry = JTextField()
+        
+        ## Set the layout manager and add the components
+        self.setLayout(GridLayout(9,2,5,5)) ## Rows, Cols, hgap, vgap
+        
+        ## Add components in order, starting from top-left to top-right
+        self.add(self.nameLabel)
+        self.add(self.nameEntry)
+        
+        self.add(self.firingConditionsLabel)
+        self.add(self.emptyLabel1)
+        
+        self.add(self.setFiringBufferLabel)
+        self.add(self.firingBufferEntry)
+        
+        self.add(self.setFiringSlotNameLabel)
+        self.add(self.firingSlotNameEntry)
+        
+        self.add(self.setFiringSlotValueLabel)
+        self.add(self.firingSlotValueEntry)
+        
+        self.add(self.behavioursLabel)
+        self.add(self.emptyLabel2)
+        
+        self.add(self.setBehaviourBufferLabel)
+        self.add(self.behaviourBufferEntry)
+        
+        self.add(self.setBehaviourSlotNameLabel)
+        self.add(self.behaviourSlotNameEntry)
+        
+        self.add(self.setBehaviourSlotValueLabel)
+        self.add(self.behaviourSlotValueEntry)
+        
+class UnitTaskDialog(JDialog):
+    '''A Dialog Box that pops up for creating a new Unit Task'''
+    
+    def __init__(self, theOwner = None, theTitle = "Create New Unit Task", isModal = True, theGraph = None):
+        '''Initializes a UnitTaskDialog
+        
+        theOwner is the client application that caused the dialog to open, must be a Frame of some sort
+        theTitle specifies the title of the pop-up window
+        isModal specifies whether the window must be dealt with before other actions can happen 
+        (True = must be dealt with)
+        aGraph is the model to be changed, it should be a Graph
+        '''
+        
+        print "##### Unit Task Dialog Initiated #####"
+        
+        #super(theOwner, "Create New Unit Task", True, windowClosing=self.cancelButtonPressed).__init__() ## The title and modal value should be hard-coded
+        super(UnitTaskDialog, self).__init__(theOwner, theTitle, isModal, windowClosing=self.cancelButtonPressed)
+        
+        self.dialogOwner = theOwner
+        self.title = theTitle
+        self.modal = isModal
+        self.graph = theGraph
+        
+        self.okButton = JButton("OK", actionPerformed=self.okButtonPressed)
+        self.cancelButton = JButton("Cancel", actionPerformed=self.cancelButtonPressed)
+        
+        self.buttonPanel = JPanel()
+        self.buttonPanel.setLayout(FlowLayout(FlowLayout.RIGHT))
+        self.buttonPanel.add(self.okButton)
+        self.buttonPanel.add(self.cancelButton)
+        
+        self.unitTaskPanel = UnitTaskDialogPanel(theGraph)
+        
+        self.setLayout(BoxLayout(self.getContentPane(), BoxLayout.Y_AXIS))
+        
+        self.add(self.unitTaskPanel)
+        self.add(self.buttonPanel)
+        
+        ## Prevent the window from being resized
+        self.setResizable(False)
+        
+        ## Set the size of the dialog box
+        self.setSize(400, 300)
+        
+        self.setVisible(True)
+            
+    def okButtonPressed(self, event):
+        '''Defines what happens when the ok button is pressed
+        
+        Creates a new UnitTask, based on the info entered into the dialog box,
+        and passes the newly created UnitTask to the owner'''
+        
+        print "(UnitTaskDialog.okButtonPressed())"
+        
+        ##theID="Unit Task", theParentPlanningUnits=None, theFiringConditions=None, theBehaviour=None):
+        newUnitTask = UnitTask(self.unitTaskPanel.nameEntry.getText())  ## Set the ID
+        
+        newUnitTask.firingConditions.append(self.unitTaskPanel.firingBufferEntry.getText())   ## Add the firing conditions
+        newUnitTask.behaviour.append(self.unitTaskPanel.behaviourBufferEntry.getText())
+        
+        self.owner.dialogFinished(newUnitTask)
+        self.dispose()
+        
+    def cancelButtonPressed(self, event):
+        '''Defines what happens when the cancel button is pressed'''
+        
+        print "(UnitTaskDialog.cancelButtonPressed())"      
+        self.owner.dialogCancelled()
+        self.dispose()
+
 class ButtonPanel(JPanel):
     '''A panel that contains a few buttons for creating PUs, UTs, etc.'''
     
-    def __init__(self, aGraph = None):
+    def __init__(self, aGraph = None, aFrame = None):
         '''Initializes the ButtonPanel
         
-        aGraph should be a Graph'''
+        aGraph should be a Graph
+        aFrame should be a JFrame, the owner of the ButtonPanel as a reference'''
         
         super(ButtonPanel, self).__init__()
         
@@ -1639,6 +2186,9 @@ class ButtonPanel(JPanel):
         else:
             self.graph = aGraph
             self.setBackground(Color.white)
+        
+        ## Store the owner frame
+        self.frame = aFrame
         
         ##Set the layout
         self.setLayout(FlowLayout())
@@ -1655,12 +2205,23 @@ class ButtonPanel(JPanel):
         pUButton.setSize(60,40)
         self.add(pUButton)
         
-        uTButton = JButton("Create New \nUnitTask")
+        uTButton = JButton("Create New \nUnitTask", actionPerformed=self.createNewUnitTask)
         #uTButton.setLocation(220,120)
         uTButton.setSize(60,40)
         self.add(uTButton)
         
-class GraphEditorFrame(JFrame):
+    def createNewUnitTask(self, event):
+        '''Defines what happens when the Create New Unit Task button is pushed
+        
+        brings up a UnitTaskDialog pop-up window for the user to enter info'''
+        
+        ## Note, this method is primarily used for testing purposes,
+        ## And will likely not appear in the final code (2014.07.21)
+        
+        dialog = UnitTaskDialog(self.frame, "Create New Unit Task", True, self.graph) ## theOwner, theTitle, isModal, theGraph
+        
+        
+class GraphEditorFrame(JFrame, DialogClientInterface):
     '''A simple view which holds a GraphEditor panel'''
     
     def __init__(self, theTitle = "Title", theGraph = None):
@@ -1676,7 +2237,7 @@ class GraphEditorFrame(JFrame):
         
         ## These are the JPanels
         self.editor = GraphEditor(theGraph)
-        self.buttonPannel = ButtonPanel(theGraph)
+        self.buttonPannel = ButtonPanel(theGraph, self)
         
         ## Set the layout of the Frame (Border Layout)
         #self.setLayout(BorderLayout())        
@@ -1695,15 +2256,52 @@ class GraphEditorFrame(JFrame):
         
         #self.buttonPannel.setSize(600, 400)
         
+        ## Add the menu Items
+        menubar = JMenuBar()
+        fileMenu = JMenu("File")
         
+        fileExport = JMenuItem("Export To ACT-R",
+            actionPerformed=self.exportToACTR)
+        
+        fileExport.setToolTipText("Convert Current Graph Into an ACT-R Readable Model")
+
+        fileMenu.add(fileExport)
+
+        menubar.add(fileMenu)
+
+        self.setJMenuBar(menubar)
+
+
+        ## Add the title and other basic operations
         self.setTitle(theTitle)
         self.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE)
         self.setSize(1000, 600)
         self.setVisible(True)
+    
+    def dialogFinished(self, theUnitTask):
+        '''Specifies what to do when the Create Unit Task Dialog box ends successfully
+        
+        theUnitTask should be a UnitTask passed from the UnitTaskDialog'''
+        
+        print "(GraphEditorFrame.dialogFinished())"
+        
+        ## Add the Unit Task to the Model and GUI (at some location)
+                
+        self.graph.addUTNodeAdvancedNew(theUnitTask, Point(200,200))    ## For now, the location is arbitrary
+        self.editor.update()
+    
+    def exportToACTR(self, e):
+        '''Exports the Graph to an ACT-R readable python file
+        
+        Calls SGOMS_Model.outputToACTR()'''
+        
+        print "(GraphEditorFrame.exportToACTR) Called"
+        
+        self.graph.SGOMS.outputToACTR()
        
      
 '''
-## Default Test Code
+## Node Test Code
 point1 = Point(1,2)
 point2 = Point(3,4)        
 node1 = Node("node1", point1)
@@ -1763,7 +2361,105 @@ for item in connected:
     print item.label, ",", item.recursed
 '''
 
-## New SGOMS Test Code
+'''
+## SGOMS Test Code 3 (Testing OutputToACT-R without Frame)
+## This will not use any features of the GUI
+## The PUs and UTs are taken from SGOMS-ACT-R-BasicModel2
+
+## Create the Model
+## Create the PUs and assign them behaviour etc.
+## Create the UTs and assign them behaviour etc.
+## Add the UTs to the PUs
+## Create the relations and add the PUs and UTs
+## Add the PUs, UTs and Relations to the model
+## Output to ACT-R
+
+SGOMS = SGOMS_Model()
+SGOMS.initialBehaviour.append("b_context.set('area:not_clear cover:not_taken status:not_started completed:no')")
+
+## The Planning Units
+take_area = PlanningUnit("take_area")
+hold_ground = PlanningUnit("hold_ground")
+
+take_area.firingConditions.append("b_context='area:not_clear status:not_started'")
+take_area.behaviour.append("b_plan_unit.set('planning_unit:take_area cuelag:none cue:start unit_task:advance state:running')")
+take_area.behaviour.append("b_unit_task.set('unit_task:advance state:running')")
+take_area.behaviour.append("b_context.set('area:not_clear status:started')")
+
+hold_ground.firingConditions.append("b_context='area:clear cover:not_taken status:not_started'")
+hold_ground.behaviour.append("b_plan_unit.set('planning_unit:hold_area cuelag:none cue:start unit_task:find_cover state:running')")
+hold_ground.behaviour.append("b_unit_task.set('unit_task:find_cover state:start')")
+hold_ground.behaviour.append("b_context.set('area:clear status:started')")
+
+## The Unit Tasks
+advance_unit_task = UnitTask("advance_unit_task")
+kill_enemies_unit_task = UnitTask("kill_enemies_unit_task")
+find_cover_unit_task = UnitTask("find_cover_unit_task")
+finished = UnitTask("finished")
+
+advance_unit_task.firingConditions.append("b_unit_task='unit_task:advance state:running'")
+advance_unit_task.behaviour.append("b_unit_task.set('unit_task:advance state:finished')")
+
+kill_enemies_unit_task.firingConditions.append("b_unit_task='unit_task:kill_enemies state:start'")
+kill_enemies_unit_task.behaviour.append("b_unit_task.set('unit_task:kill_enemies state:finished')")
+kill_enemies_unit_task.behaviour.append("b_context.set('area:clear cover:not_taken status:not_started')")
+
+find_cover_unit_task.firingConditions.append("b_unit_task='unit_task:find_cover state:start'")
+find_cover_unit_task.behaviour.append("b_unit_task.set('unit_task:find_cover state:finished')")
+find_cover_unit_task.behaviour.append("b_context.set('area:clear cover:taken status:completed')")
+
+finished.firingConditions.append("")
+finished.behaviour.append("pass")
+
+## Add the UTs to the PUs
+take_area.unitTaskList.append(advance_unit_task)
+take_area.unitTaskList.append(kill_enemies_unit_task)
+hold_ground.unitTaskList.append(find_cover_unit_task)
+
+
+## Create the Relations
+## Should create a method in SGOMS_Model that updates the relations automatically
+relation1 = PUxUTRelation(1, take_area, advance_unit_task, 0)
+relation2 = PUxUTRelation(2, take_area, kill_enemies_unit_task, 1)
+relation3 = PUxUTRelation(3, take_area, finished, 2)
+
+relation4 = PUxUTRelation(4, hold_ground, find_cover_unit_task, 0)
+relation5 = PUxUTRelation(5, hold_ground, finished, 1)
+
+## Change the DM strings manually
+relation1.DM_string = "planning_unit:take_area    cuelag:none          cue:start          unit_task:advance"
+relation2.DM_string = "planning_unit:take_area    cuelag:start         cue:advance        unit_task:kill_enemies"
+relation3.DM_string = "planning_unit:take_area    cuelag:advance       cue:kill_enemies   unit_task:finished"
+relation4.DM_string = "planning_unit:hold_area    cuelag:none          cue:start          unit_task:find_cover"
+relation5.DM_string = "planning_unit:hold_area    cuelag:start         cue:find_cover     unit_task:finished"
+
+## Add the Relations
+SGOMS.pUxUTRelationList.append(relation1)
+SGOMS.pUxUTRelationList.append(relation2)
+SGOMS.pUxUTRelationList.append(relation3)
+SGOMS.pUxUTRelationList.append(relation4)
+SGOMS.pUxUTRelationList.append(relation5)
+
+## Add the UTs and PUs to the model (do not add "finished"
+SGOMS.unitTaskList.append(advance_unit_task)
+SGOMS.unitTaskList.append(kill_enemies_unit_task)
+SGOMS.unitTaskList.append(find_cover_unit_task)
+
+SGOMS.planningUnitList.append(take_area)
+SGOMS.planningUnitList.append(hold_ground)
+
+## Add The PUxUTRelations
+#SGOMS.addPUxUTRelationReturnSelf(advance_unit_task, take_area, 0)
+#SGOMS.addPUxUTRelationReturnSelf(kill_enemies_unit_task, take_area, 1)
+#SGOMS.addPUxUTRelationReturnSelf(find_cover_unit_task, hold_ground, 0)
+
+## Print Model Contents, and export to ACT-R
+SGOMS.printModelContentsAdvanced()
+SGOMS.outputToACTR()
+'''
+
+
+## SGOMS Test Code 2
 
 ## The procedure for adding PUNodes and UTNodes
 ## 1. Create map (creates a blank SGOMS_Model)
@@ -1783,7 +2479,7 @@ map1.SGOMS.printModelContentsAdvanced()
 
 
 '''
-## Original SGOMS Test Code
+## SGOMS Test Code 1
 ## The Planning Units and UTs
 pu1 = PlanningUnit("PU1")
 ut1 = UnitTask("UT1")
@@ -1818,7 +2514,12 @@ print map1
 #for node in map1.nodes:
 #    print node.recursed
 '''
+
+
 frame = GraphEditorFrame("Map1", map1)
+
+#print frame.graph
+#print frame.graph.SGOMS
 
 #map1.SGOMS.printModelContentsAdvanced()
 
